@@ -3,19 +3,14 @@
   "dockerFile": "../Dockerfile",
   "context": "..",
   "remoteUser": "root",
-  
   "runArgs": [
-    "--network=host",
     "--privileged",
-    "--env=DISPLAY=${localEnv:DISPLAY}",
-    "--env=QT_X11_NO_MITSHM=1",
-    "--volume=/tmp/.X11-unix:/tmp/.X11-unix"
+    "--env=DISPLAY=host.docker.internal:0",
+    "--env=QT_X11_NO_MITSHM=1"
   ],
-  
   "containerEnv": {
     "ROS_DOMAIN_ID": "${localEnv:ROS_DOMAIN_ID:=0}"
   },
-  
   "extensions": [
     "ms-vscode.cpptools",
     "ms-python.python",
@@ -23,12 +18,11 @@
     "twxs.cmake",
     "ms-iot.vscode-ros"
   ],
-  
   "settings": {
     "terminal.integrated.shell.linux": "/bin/bash",
     "python.pythonPath": "/usr/bin/python3",
     "cmake.configureOnOpen": true
   },
-  
   "forwardPorts": [],
+  "postCreateCommand": "echo 'source /opt/ros/humble/setup.bash' >> ~/.bashrc"
 }
