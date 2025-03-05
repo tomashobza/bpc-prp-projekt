@@ -1,4 +1,3 @@
-# Dockerfile
 FROM osrf/ros:humble-desktop
 
 # Create non-root user
@@ -25,9 +24,6 @@ RUN apt-get update && apt-get install -y \
 # Switch to non-root user
 USER $USERNAME
 WORKDIR /home/$USERNAME
-
-# Create ROS workspace
-RUN mkdir -p /home/$USERNAME/ros_ws/src
 
 # Source ROS environment in bashrc
 RUN echo "source /opt/ros/humble/setup.bash" >> /home/$USERNAME/.bashrc \
