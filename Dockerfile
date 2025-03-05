@@ -1,3 +1,4 @@
+# Dockerfile
 FROM osrf/ros:humble-desktop
 
 # Create non-root user
@@ -23,21 +24,13 @@ RUN apt-get update && apt-get install -y \
 
 # Switch to non-root user
 USER $USERNAME
+WORKDIR /home/$USERNAME
 
 # Create ROS workspace
 RUN mkdir -p /home/$USERNAME/ros_ws/src
 
-# Copy local src directory contents
-COPY --chown=$USERNAME:$USERNAME src/ /home/$USERNAME/ros_ws/src/
-
-# Set up workspace
-WORKDIR /home/$USERNAME/ros_ws
-
 # Source ROS environment in bashrc
 RUN echo "source /opt/ros/humble/setup.bash" >> /home/$USERNAME/.bashrc \
-    && echo "source /home/$USERNAME/ros_ws/install/setup.bash" >> /home/$USERNAME/.bashrc
-
-# Initial build of workspace
-RUN /bin/bash -c "source /opt/ros/humble/setup.bash && colcon build"
+    && echo "if [ -f /home/$USERNAME/ros_ws/install/setup.bash ]; then source /home/$USERNAME/ros_ws/install/setup.bash; fi" >> /home/$USERNAME/.bashrc
 
 CMD ["bash"]
