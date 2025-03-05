@@ -1,0 +1,34 @@
+{
+  "name": "ROS2 Humble Development",
+  "dockerFile": "../Dockerfile",
+  "context": "..",
+  "remoteUser": "root",
+  
+  "runArgs": [
+    "--network=host",
+    "--privileged",
+    "--env=DISPLAY=${localEnv:DISPLAY}",
+    "--env=QT_X11_NO_MITSHM=1",
+    "--volume=/tmp/.X11-unix:/tmp/.X11-unix"
+  ],
+  
+  "containerEnv": {
+    "ROS_DOMAIN_ID": "${localEnv:ROS_DOMAIN_ID:=0}"
+  },
+  
+  "extensions": [
+    "ms-vscode.cpptools",
+    "ms-python.python",
+    "ms-vscode.cmake-tools",
+    "twxs.cmake",
+    "ms-iot.vscode-ros"
+  ],
+  
+  "settings": {
+    "terminal.integrated.shell.linux": "/bin/bash",
+    "python.pythonPath": "/usr/bin/python3",
+    "cmake.configureOnOpen": true
+  },
+  
+  "forwardPorts": [],
+}
