@@ -1,51 +1,43 @@
 FROM osrf/ros:humble-desktop
 
-# Set environment variables
-ENV DEBIAN_FRONTEND=noninteractive
+# Create non-root user
+ARG USERNAME=skibidi
+ARG USER_UID=1000
+ARG USER_GID=$USER_UID
 
-# Install basic dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    cmake \
-    git \
-    python3-colcon-common-extensions \
+# Create the user
+RUN groupadd --gid $USER_GID $USERNAME \
+    && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME \
+    && apt-get update \
+    && apt-get install -y sudo \
+    && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
+    && chmod 0440 /etc/sudoers.d/$USERNAME
+
+# Install additional ROS packages and dependencies
+RUN apt-get update && apt-get install -y \
     python3-pip \
-    python3-rosdep \
-    python3-vcstool \
-    wget \
-    curl \
-    vim \
-    bash-completion \
-    sudo \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install additional ROS2 dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ros-humble-rqt \
-    ros-humble-rqt-common-plugins \
+    ros-humble-rqt-plot \
+    ros-humble-rqt-graph \
     ros-humble-rviz2 \
-    ros-humble-xacro \
-    ros-humble-tf2-ros \
-    ros-humble-tf2-tools \
     && rm -rf /var/lib/apt/lists/*
 
-# Create user skibidi
-RUN useradd -m skibidi -s /bin/bash && \
-    echo "skibidi:skibidi" | chpasswd && \
-    adduser skibidi sudo && \
-    echo "skibidi ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+# Switch to non-root user
+USER $USERNAME
 
-# Setup ROS2 environment for skibidi
-RUN echo "source /opt/ros/humble/setup.bash" >> /home/skibidi/.bashrc
+# Create ROS workspace
+RUN mkdir -p /home/$USERNAME/ros_ws/src
 
-# Create workspace directory structure in skibidi's home
-RUN mkdir -p /home/skibidi/ros_ws/src && \
-    chown -R skibidi:skibidi /home/skibidi/ros_ws
+# Copy local src directory contents
+COPY --chown=$USERNAME:$USERNAME src/ /home/$USERNAME/ros_ws/src/
 
-# Switch to the skibidi user
-USER skibidi
+# Set up workspace
+WORKDIR /home/$USERNAME/ros_ws
 
-# Set working directory to skibidi's workspace
-WORKDIR /home/skibidi/ros_ws
+# Source ROS environment in bashrc
+RUN echo "source /opt/ros/humble/setup.bash" >> /home/$USERNAME/.bashrc \
+    && echo "source /home/$USERNAME/ros_ws/install/setup.bash" >> /home/$USERNAME/.bashrc
+
+# Initial build of workspace
+RUN /bin/bash -c "source /opt/ros/humble/setup.bash && colcon build"
 
 CMD ["bash"]
