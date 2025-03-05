@@ -5,41 +5,47 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Install basic dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-  build-essential \
-  cmake \
-  git \
-  python3-colcon-common-extensions \
-  python3-pip \
-  python3-rosdep \
-  python3-vcstool \
-  wget \
-  curl \
-  vim \
-  bash-completion \
-  && rm -rf /var/lib/apt/lists/*
+    build-essential \
+    cmake \
+    git \
+    python3-colcon-common-extensions \
+    python3-pip \
+    python3-rosdep \
+    python3-vcstool \
+    wget \
+    curl \
+    vim \
+    bash-completion \
+    sudo \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install additional ROS2 dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-  ros-humble-rqt \
-  ros-humble-rqt-common-plugins \
-  ros-humble-rviz2 \
-  ros-humble-xacro \
-  ros-humble-tf2-ros \
-  ros-humble-tf2-tools \
-  && rm -rf /var/lib/apt/lists/*
+    ros-humble-rqt \
+    ros-humble-rqt-common-plugins \
+    ros-humble-rviz2 \
+    ros-humble-xacro \
+    ros-humble-tf2-ros \
+    ros-humble-tf2-tools \
+    && rm -rf /var/lib/apt/lists/*
 
-# Setup ROS2 environment
-RUN echo "source /opt/ros/humble/setup.bash" >> /home/$USERNAME/.bashrc
+# Create user skibidi
+RUN useradd -m skibidi -s /bin/bash && \
+    echo "skibidi:skibidi" | chpasswd && \
+    adduser skibidi sudo && \
+    echo "skibidi ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Create workspace directory structure
-RUN mkdir -p /workspaces/ros_ws/src
+# Setup ROS2 environment for skibidi
+RUN echo "source /opt/ros/humble/setup.bash" >> /home/skibidi/.bashrc
 
-# Set working directory
-WORKDIR /workspaces/ros_ws
+# Create workspace directory structure in skibidi's home
+RUN mkdir -p /home/skibidi/ros_ws/src && \
+    chown -R skibidi:skibidi /home/skibidi/ros_ws
 
-# # Add a script to source ROS environment on container start
-# COPY entrypoint.sh /entrypoint.sh
-# RUN chmod +x /entrypoint.sh
+# Switch to the skibidi user
+USER skibidi
 
-# ENTRYPOINT ["/entrypoint.sh"]
+# Set working directory to skibidi's workspace
+WORKDIR /home/skibidi/ros_ws
+
 CMD ["bash"]
