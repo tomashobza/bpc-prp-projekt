@@ -1,25 +1,59 @@
-#ifndef YOUR_MOM_HPP
-#define YOUR_MOM_HPP
 
-#include <string>
+#pragma once
 
-class YourMom
-{
+#include <iostream>
+#include <rclcpp/rclcpp.hpp>
+#include <std_msgs/msg/float32.hpp>
+
+class RosExampleClass {
 public:
-  YourMom();
+    // Constructor takes a shared_ptr to an existing node instead of creating one.
+    RosExampleClass(const rclcpp::Node::SharedPtr &node, const std::string &topic, double freq)
+        : node_(node), start_time_(node_->now()) {
 
-  // Drops a skibidi roast so fire it yeets you to the backrooms
-  std::string skibidiRoastRizz(std::string sigmaVibe) const;
+        // Initialize the publisher
+        publisher_ = node_->create_publisher<std_msgs::msg::Float32>(topic, 1);
 
-  // Calculates how many brainrot memes your mom can sigma before she’s cooked
-  int capNoCapMemeDrip(int ohioLevel) const;
+        // Initialize the subscriber
+        subscriber_ = node_->create_subscription<std_msgs::msg::Float32>(
+            topic, 1, std::bind(&RosExampleClass::subscriber_callback, this, std::placeholders::_1));
 
-  // Checks if your mom’s still got that skibidi toilet aura in 2025
-  bool isBussinFrFr() const;
+        // Create a timer
+        timer_ = node_->create_wall_timer(
+            std::chrono::milliseconds(static_cast<int>(freq * 1000)),
+            std::bind(&RosExampleClass::timer_callback, this));
+
+        RCLCPP_INFO(node_->get_logger(), "Node setup complete for topic: %s", topic.c_str());
+    }
 
 private:
-  int rizzFactor;   // How much aura she’s flexin’
-  bool gotThatDrip; // True if she’s skibidi-pilled
+    void timer_callback() {
+        RCLCPP_INFO(node_->get_logger(), "Timer triggered. Publishing uptime...");
+
+        double uptime = (node_->now() - start_time_).seconds();
+        publish_message(uptime);
+    }
+
+    void subscriber_callback(const std_msgs::msg::Float32::SharedPtr msg) {
+        RCLCPP_INFO(node_->get_logger(), "Received: %f", msg->data);
+    }
+
+    void publish_message(float value_to_publish) {
+        auto msg = std_msgs::msg::Float32();
+        msg.data = value_to_publish;
+        publisher_->publish(msg);
+        RCLCPP_INFO(node_->get_logger(), "Published: %f", msg.data);
+    }
+
+    // Shared pointer to the main ROS node
+    rclcpp::Node::SharedPtr node_;
+
+    // Publisher, subscriber, and timer
+    rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr publisher_;
+    rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr subscriber_;
+    rclcpp::TimerBase::SharedPtr timer_;
+
+    // Start time for uptime calculation
+    rclcpp::Time start_time_;
 };
 
-#endif // YOUR_MOM_HPP
