@@ -2,6 +2,7 @@
 #pragma once
 
 #include <iostream>
+#include <cmath>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/float32.hpp>
 
@@ -31,7 +32,7 @@ private:
         RCLCPP_INFO(node_->get_logger(), "Timer triggered. Publishing uptime...");
 
         double uptime = (node_->now() - start_time_).seconds();
-        publish_message(uptime);
+        publish_message(std::sin(uptime/100));
     }
 
     void subscriber_callback(const std_msgs::msg::Float32::SharedPtr msg) {
