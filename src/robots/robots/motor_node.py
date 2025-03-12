@@ -8,6 +8,7 @@ from std_msgs.msg import UInt8MultiArray, Float32
 class MotorNode(Node):
     def __init__(self):
         super().__init__("motor_node")
+
         publish_topic = "/bpc_prp_robot/set_motor_speeds"
         subscribe_topic = "/bpc_prp_robot/encoders"
         timer_period = 1.0  # seconds
@@ -18,6 +19,7 @@ class MotorNode(Node):
         )
         self.timer = self.create_timer(timer_period, self.timer_callback)
         self.start_time = self.get_clock().now()
+
         self.get_logger().info("A jedeeeem!")
 
     def timer_callback(self):
