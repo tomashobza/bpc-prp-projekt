@@ -6,6 +6,6 @@ run: build
 	$(source install/setup.bash)
 	$(export ROS_DOMAIN_ID=1)
 	echo $(ROS_DOMAIN_ID)
-	ros2 run MyProject my_program
+	ros2 run robots my_program
 
 .PHONY: build run
