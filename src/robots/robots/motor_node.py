@@ -2,7 +2,7 @@
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import UInt8MultiArray, Float32
+from std_msgs.msg import UInt8MultiArray, Float32, UInt32MultiArray
 
 
 class MotorNode(Node):
@@ -11,11 +11,11 @@ class MotorNode(Node):
 
         publish_topic = "/bpc_prp_robot/set_motor_speeds"
         subscribe_topic = "/bpc_prp_robot/encoders"
-        timer_period = 1.0  # seconds
+        timer_period = 0.1  # seconds
 
         self.publisher_ = self.create_publisher(UInt8MultiArray, publish_topic, 10)
         self.subscription = self.create_subscription(
-            Float32, subscribe_topic, self.listener_callback, 10
+            UInt32MultiArray, subscribe_topic, self.listener_callback, 10
         )
         self.timer = self.create_timer(timer_period, self.timer_callback)
         self.start_time = self.get_clock().now()
@@ -29,7 +29,7 @@ class MotorNode(Node):
         self.publish_message(uptime)
 
     def listener_callback(self, msg):
-        self.get_logger().info("Received: %f" % msg.data)
+        self.get_logger().info("Received: %d" % msg.data[0])
 
     def publish_message(self, value_to_publish):
         msg = UInt8MultiArray()
