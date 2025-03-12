@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(MyProject)
+project(robots)
 
 # Find required packages
 find_package(ament_cmake REQUIRED)
@@ -10,9 +10,12 @@ find_package(std_msgs REQUIRED)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+add_subdirectory(test)
+
 # Add include directories
 include_directories(
-  include
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${CMAKE_CURRENT_SOURCE_DIR}
   ${rclcpp_INCLUDE_DIRS}
   ${std_msgs_INCLUDE_DIRS}
 )
