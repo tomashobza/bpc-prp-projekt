@@ -18,9 +18,8 @@ include_directories(
 )
 
 # Create executable
-add_executable(my_program 
+add_executable(my_program
   src/main.cpp
-  src/nodes/io_node.cpp
 )
 
 # Link dependencies
