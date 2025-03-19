@@ -15,7 +15,7 @@ class LineEstimator
 public:
     static float estimate_continuous_line_pose(float left_val, float right_val)
     {
-        return (left_val - right_val);
+        return (right_val - left_val);
     }
 
     static DiscreteLinePose estimate_discrete_line_pose(float l_norm, float r_norm)

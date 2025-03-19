@@ -52,6 +52,8 @@ private:
         float left_value = static_cast<float>(msg->data[0]);
         float right_value = static_cast<float>(msg->data[1]);
 
+        RCLCPP_INFO(node_->get_logger(), "Received line sensors: L=%f R=%f", left_value, right_value);
+
         // Update min/max values for calibration
         left_min_ = std::min(left_min_, left_value);
         left_max_ = std::max(left_max_, left_value);

@@ -1,67 +1,75 @@
-
 #pragma once
-
 #include <iostream>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/float32.hpp>
 #include <std_msgs/msg/u_int8_multi_array.hpp>
 #include <std_msgs/msg/u_int32_multi_array.hpp>
 
-class MotorNode {
+class MotorNode
+{
 public:
-    // Constructor takes a shared_ptr to an existing node instead of creating one.
     MotorNode(const rclcpp::Node::SharedPtr &node)
-        : node_(node), start_time_(node_->now()) {
+        : node_(node), start_time_(node_->now())
+    {
 
-        const double freq = 1;
-        const std::string publish_topic = "/bpc_prp_robot/set_motor_speeds";
-        const std::string subscribe_topic = "/bpc_prp_robot/encoders";
+        const std::string motors_topic = "/bpc_prp_robot/set_motor_speeds";
+        const std::string line_topic = "/line_pose";
 
-        // Initialize the publisher
-        publisher_ = node_->create_publisher<std_msgs::msg::UInt8MultiArray>(publish_topic, 1);
+        // Initialize the motor speeds publisher
+        motors_publisher_ = node_->create_publisher<std_msgs::msg::UInt8MultiArray>(motors_topic, 1);
 
-        // Initialize the subscriber
-        subscriber_ = node_->create_subscription<std_msgs::msg::UInt32MultiArray>(
-            subscribe_topic, 1, std::bind(&MotorNode::subscriber_callback, this, std::placeholders::_1));
+        // Subscribe to line position
+        line_subscriber_ = node_->create_subscription<std_msgs::msg::Float32>(
+            line_topic, 1, std::bind(&MotorNode::line_callback, this, std::placeholders::_1));
 
-        // Create a timer
-        timer_ = node_->create_wall_timer(
-            std::chrono::milliseconds(static_cast<int>(freq * 1000)),
-            std::bind(&MotorNode::timer_callback, this));
-
-        // RCLCPP_INFO(node_->get_logger(), "Node setup complete for topic: %s", topic.c_str());
-        RCLCPP_INFO(node_->get_logger(), "A jedeeeem!");
+        RCLCPP_INFO(node_->get_logger(), "Motor control node started!");
     }
 
 private:
-    void timer_callback() {
-        RCLCPP_INFO(node_->get_logger(), "Timer triggered. Publishing uptime...");
+    void line_callback(const std_msgs::msg::Float32::SharedPtr msg)
+    {
+        float line_offset = msg->data; // negative = line on left, positive = line on right
 
-        double uptime = (node_->now() - start_time_).seconds();
-        publish_message(uptime);
-    }
+        // Base speed for forward motion (in the upper half of uint8 range)
+        const uint8_t base_speed = 130;  // Choose a value between 127 and 255
+        const float max_speed_diff = 50; // Maximum speed difference between wheels
 
-    void subscriber_callback(const std_msgs::msg::UInt32MultiArray::SharedPtr msg) {
-        RCLCPP_INFO(node_->get_logger(), "Received: %d", msg->data[0]);
-    }
+        // Calculate speed difference based on line offset
+        // line_offset is typically between -1 and 1
+        float speed_diff = line_offset * max_speed_diff;
 
-    void publish_message(float value_to_publish) {
-        auto msg = std_msgs::msg::UInt8MultiArray();
-        // msg.data = value_to_publish;
-        msg.data = {100, 100};
-        publisher_->publish(msg);
-        // RCLCPP_INFO(node_->get_logger(), "Published: %f", msg.data);
+        RCLCPP_INFO(node_->get_logger(), "speed_diff: %f", speed_diff);
+
+        // Calculate left and right wheel speeds
+        float left_speed = base_speed + speed_diff;
+        float right_speed = base_speed - speed_diff;
+
+        RCLCPP_INFO(node_->get_logger(), "left_speed: %f, right_speed: %f", left_speed, right_speed);
+
+        // Ensure speeds stay within valid range (127-255)
+        left_speed = std::min(255.0f, std::max(127.0f, left_speed));
+        right_speed = std::min(255.0f, std::max(127.0f, right_speed));
+
+        // Publish motor speeds
+        auto msg_speeds = std_msgs::msg::UInt8MultiArray();
+        msg_speeds.data = {static_cast<uint8_t>(left_speed),
+                           static_cast<uint8_t>(right_speed)};
+        motors_publisher_->publish(msg_speeds);
+
+        RCLCPP_DEBUG(node_->get_logger(),
+                     "Line offset: %.2f, Motors: L=%d, R=%d",
+                     line_offset,
+                     static_cast<int>(msg_speeds.data[0]),
+                     static_cast<int>(msg_speeds.data[1]));
     }
 
     // Shared pointer to the main ROS node
     rclcpp::Node::SharedPtr node_;
 
-    // Publisher, subscriber, and timer
-    rclcpp::Publisher<std_msgs::msg::UInt8MultiArray>::SharedPtr publisher_;
-    rclcpp::Subscription<std_msgs::msg::UInt32MultiArray>::SharedPtr subscriber_;
-    rclcpp::TimerBase::SharedPtr timer_;
+    // Publishers and subscribers
+    rclcpp::Publisher<std_msgs::msg::UInt8MultiArray>::SharedPtr motors_publisher_;
+    rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr line_subscriber_;
 
     // Start time for uptime calculation
     rclcpp::Time start_time_;
 };
-
