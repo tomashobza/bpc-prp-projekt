@@ -53,7 +53,7 @@ private:
         uint32_t encoder_left = msg->data[0];
         uint32_t encoder_right = msg->data[1];
         
-        RCLCPP_INFO(node_->get_logger(), "Received encoders: L=%u R=%u", encoder_left, encoder_right);
+        //RCLCPP_INFO(node_->get_logger(), "Received encoders: L=%u R=%u", encoder_left, encoder_right);
         
         // Skip the first reading to establish a baseline
         if (first_reading_) {
@@ -102,8 +102,8 @@ private:
         while (robot_theta_ > M_PI) robot_theta_ -= 2.0 * M_PI;
         while (robot_theta_ < -M_PI) robot_theta_ += 2.0 * M_PI;
         
-        RCLCPP_INFO(node_->get_logger(), "Updated position: x=%.3f, y=%.3f, theta=%.3f", 
-                    robot_x_, robot_y_, robot_theta_);
+        /*RCLCPP_INFO(node_->get_logger(), "Updated position: x=%.3f, y=%.3f, theta=%.3f", 
+                    robot_x_, robot_y_, robot_theta_);*/
     }
     
     void publish_position() {

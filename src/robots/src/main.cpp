@@ -17,7 +17,9 @@ int main(int argc, char* argv[]) {
     // auto example_class1 = std::make_shared<RosExampleClass>(node1, "topic1", 1.0);
     // auto example_class2 = std::make_shared<RosExampleClass>(node2, "topic2", 2.0);
     // auto example_class2 = std::make_shared<MotorNode>(node1);
-    auto example_class2 = std::make_shared<EncoderNode>(node1);
+   
+    //auto example_class2 = std::make_shared<EncoderNode>(node1);
+    auto motor_node = std::make_shared<MotorNode>(node1);
 
     // Add nodes to the executor
     executor->add_node(node1);
