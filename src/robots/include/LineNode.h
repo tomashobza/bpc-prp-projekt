@@ -52,8 +52,6 @@ private:
         float left_value = static_cast<float>(msg->data[0]);
         float right_value = static_cast<float>(msg->data[1]);
 
-        RCLCPP_INFO(node_->get_logger(), "Received line sensors: L=%f R=%f", left_value, right_value);
-
         // Update min/max values for calibration
         left_min_ = std::min(left_min_, left_value);
         left_max_ = std::max(left_max_, left_value);
@@ -63,6 +61,10 @@ private:
         // Normalize sensor values to 0-1 range
         left_normalized_ = (left_value - left_min_) / (left_max_ - left_min_);
         right_normalized_ = (right_value - right_min_) / (right_max_ - right_min_);
+
+        // Exponential window
+        // float raw_line_pose = get_continuous_line_pose();
+        // line_pose_ = kAlpha_ * raw_line_pose + (1.0f - kAlpha_) * line_pose_;
 
         // Publish the continuous line pose
         auto msg_pose = std_msgs::msg::Float32();
@@ -76,4 +78,7 @@ private:
     float right_max_{0.0f};
     float left_normalized_{0.0f};
     float right_normalized_{0.0f};
+
+    float line_pose_{0.0f};
+    const float kAlpha_{0.6f};
 };
