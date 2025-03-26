@@ -55,23 +55,44 @@ private:
         // Calculate left and right wheel speeds
         // left_speed_ = base_speed + speed_diff;
         // right_speed_ = base_speed - speed_diff;
-        if (line_offset > 0.1)
-        {
-            left_speed_ = base_speed;
-            right_speed_ = base_speed - line_offset * max_speed_diff;
-        }
-        else if (line_offset < -0.1)
-        {
-            left_speed_ = base_speed + line_offset * max_speed_diff;
-            right_speed_ = base_speed;
-        }
-        else
-        {
-            left_speed_ = base_speed;
-            right_speed_ = base_speed;
-        }
+        // if (line_offset > 0.1)
+        // {
+        //     left_speed_ = base_speed;
+        //     right_speed_ = base_speed - line_offset * max_speed_diff;
+        // }
+        // else if (line_offset < -0.1)
+        // {
+        //     left_speed_ = base_speed + line_offset * max_speed_diff;
+        //     right_speed_ = base_speed;
+        // }
+        // else
+        // {
+        //     left_speed_ = base_speed;
+        //     right_speed_ = base_speed;
+        // }
+        // if (line_offset < 0.1)
+        // {
+        //     left_speed_ = base_speed;
+        //     right_speed_ = base_speed - line_offset * max_speed_diff;
+        //     RCLCPP_INFO(node_->get_logger(), "jedu vlevo %f", line_offset);
+        // }
 
-        RCLCPP_INFO(node_->get_logger(), "left_speed: %f, right_speed: %f", left_speed_, right_speed_);
+        // else if (line_offset > 0.1)
+        // {
+        //     left_speed_ = base_speed + line_offset * max_speed_diff;
+        //     right_speed_ = base_speed;
+        //     RCLCPP_INFO(node_->get_logger(), "jedu vpravo %f", line_offset);
+        // }
+        // else
+        // {
+        //     left_speed_ = base_speed + 5;
+        //     right_speed_ = base_speed + 5;
+        //     RCLCPP_INFO(node_->get_logger(), "jedu rovne %f", line_offset);
+        // }
+        left_speed_ = base_speed + line_offset * max_speed_diff;
+        right_speed_ = base_speed - line_offset * max_speed_diff;
+
+        // RCLCPP_INFO(node_->get_logger(), "left_speed: %f, right_speed: %f", left_speed_, right_speed_);
 
         // Ensure speeds stay within valid range (127-255)
         left_speed_ = std::min(255.0f, std::max(127.0f, left_speed_));
