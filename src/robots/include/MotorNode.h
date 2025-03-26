@@ -23,7 +23,7 @@ public:
 
         // Create timer for publishing motor speeds (50Hz)
         timer_ = node_->create_wall_timer(
-            std::chrono::milliseconds(5),
+            std::chrono::milliseconds(10),
             std::bind(&MotorNode::timer_callback, this));
 
         RCLCPP_INFO(node_->get_logger(), "Motor control node started!");
@@ -35,17 +35,42 @@ private:
         float line_offset = msg->data; // negative = line on left, positive = line on right
 
         // Base speed for forward motion (in the upper half of uint8 range)
-        const uint8_t base_speed = 130;  // Choose a value between 127 and 255
-        const float max_speed_diff = 80; // Maximum speed difference between wheels
+        const uint8_t base_speed = 130; // Choose a value between 127 and 255
+        const float max_speed_diff = 5; // Maximum speed difference between wheels
 
         // Calculate speed difference based on line offset
         // line_offset is typically between -1 and 1
-        float speed_diff = line_offset * max_speed_diff;
-        RCLCPP_INFO(node_->get_logger(), "speed_diff: %f", speed_diff);
+        // float speed_diff = line_offset * max_speed_diff;
+        // float speed_diff = 0;
+        // if (line_offset > 0)
+        // {
+        //     speed_diff = -line_offset * max_speed_diff;
+        // }
+        // else
+        // {
+        //     speed_diff = line_offset * max_speed_diff;
+        // }
+        // RCLCPP_INFO(node_->get_logger(), "speed_diff: %f", speed_diff);
 
         // Calculate left and right wheel speeds
-        left_speed_ = base_speed + speed_diff;
-        right_speed_ = base_speed - speed_diff;
+        // left_speed_ = base_speed + speed_diff;
+        // right_speed_ = base_speed - speed_diff;
+        if (line_offset > 0.1)
+        {
+            left_speed_ = base_speed;
+            right_speed_ = base_speed - line_offset * max_speed_diff;
+        }
+        else if (line_offset < -0.1)
+        {
+            left_speed_ = base_speed + line_offset * max_speed_diff;
+            right_speed_ = base_speed;
+        }
+        else
+        {
+            left_speed_ = base_speed;
+            right_speed_ = base_speed;
+        }
+
         RCLCPP_INFO(node_->get_logger(), "left_speed: %f, right_speed: %f", left_speed_, right_speed_);
 
         // Ensure speeds stay within valid range (127-255)

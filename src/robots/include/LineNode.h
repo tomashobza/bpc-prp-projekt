@@ -31,14 +31,14 @@ public:
     ~LineNode() {};
 
     // relative pose to line in meters
-    float get_continuous_line_pose() const
+    float get_continuous_line_pose(float left_norm, float right_norm) const
     {
-        return LineEstimator::estimate_continuous_line_pose(left_normalized_, right_normalized_);
+        return LineEstimator::estimate_continuous_line_pose(left_norm, right_norm);
     }
 
-    DiscreteLinePose get_discrete_line_pose() const
+    DiscreteLinePose get_discrete_line_pose(float left_norm, float right_norm) const
     {
-        return LineEstimator::estimate_discrete_line_pose(left_normalized_, right_normalized_);
+        return LineEstimator::estimate_discrete_line_pose(left_norm, right_norm);
     }
 
 private:
@@ -47,9 +47,10 @@ private:
     rclcpp::Publisher<std_msgs::msg::UInt16MultiArray>::SharedPtr sensor_minmax_publisher_;
     rclcpp::Node::SharedPtr node_;
 
-    // Moving average filter buffer for line_pose values
-    std::deque<float> line_pose_buffer_;
-    const size_t buffer_size_ = 10; // Store last 10 values
+    // Moving average filter buffers
+    std::deque<float> left_normalized_buffer_;
+    std::deque<float> right_normalized_buffer_;
+    const size_t buffer_size_ = 100;
 
     void on_line_sensors_msg(const std_msgs::msg::UInt16MultiArray::SharedPtr msg)
     {
@@ -69,28 +70,44 @@ private:
         right_max_ = std::max(right_max_, right_value);
 
         // Normalize sensor values to 0-1 range
-        left_normalized_ = (left_value - left_min_) / (left_max_ - left_min_);
-        right_normalized_ = (right_value - right_min_) / (right_max_ - right_min_);
+        float left_normalized = (left_value - left_min_) / (left_max_ - left_min_);
+        float right_normalized = (right_value - right_min_) / (right_max_ - right_min_);
 
-        // Calculate the current line pose
-        float current_line_pose = get_continuous_line_pose();
+        // Store current normalized values
+        left_normalized_ = left_normalized;
+        right_normalized_ = right_normalized;
 
-        // Add to buffer
-        line_pose_buffer_.push_back(current_line_pose);
+        // Add to buffers
+        left_normalized_buffer_.push_back(left_normalized);
+        right_normalized_buffer_.push_back(right_normalized);
 
         // Keep buffer size limited
-        if (line_pose_buffer_.size() > buffer_size_)
+        if (left_normalized_buffer_.size() > buffer_size_)
         {
-            line_pose_buffer_.pop_front();
+            left_normalized_buffer_.pop_front();
+        }
+        if (right_normalized_buffer_.size() > buffer_size_)
+        {
+            right_normalized_buffer_.pop_front();
         }
 
-        // Calculate average of values in buffer
-        float sum = 0.0f;
-        for (const auto &value : line_pose_buffer_)
+        // Calculate average of normalized sensor values
+        float left_sum = 0.0f;
+        float right_sum = 0.0f;
+        for (size_t i = 0; i < left_normalized_buffer_.size(); ++i)
         {
-            sum += value;
+            left_sum += left_normalized_buffer_[i];
         }
-        float averaged_line_pose = sum / static_cast<float>(line_pose_buffer_.size());
+        for (size_t i = 0; i < right_normalized_buffer_.size(); ++i)
+        {
+            right_sum += right_normalized_buffer_[i];
+        }
+
+        float left_avg = left_sum / static_cast<float>(left_normalized_buffer_.size());
+        float right_avg = right_sum / static_cast<float>(right_normalized_buffer_.size());
+
+        // Calculate line pose based on averaged sensor values
+        float averaged_line_pose = get_continuous_line_pose(left_avg, right_avg);
 
         // Publish the filtered line pose
         auto msg_pose = std_msgs::msg::Float32();
@@ -108,9 +125,9 @@ private:
     }
 
     float left_min_{1024.0f};
-    float left_max_{0.0f};
+    float left_max_{100.0f};
     float right_min_{1024.0f};
-    float right_max_{0.0f};
+    float right_max_{100.0f};
     float left_normalized_{0.0f};
     float right_normalized_{0.0f};
 };
