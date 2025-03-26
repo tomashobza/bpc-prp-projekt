@@ -136,7 +136,7 @@ private:
     float last_error_left = 0.0;
     float last_error_right = 0.0;
 
-    const uint8_t base_speed = 150;
+    const uint8_t base_speed = 140;
     const uint8_t max_speed = 255;
 
     // Current motor speeds
