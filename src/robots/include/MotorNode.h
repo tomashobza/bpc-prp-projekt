@@ -4,6 +4,7 @@
 #include <std_msgs/msg/float32.hpp>
 #include <std_msgs/msg/u_int8_multi_array.hpp>
 #include <std_msgs/msg/u_int32_multi_array.hpp>
+#include <std_msgs/msg/u_int8.hpp>
 
 class MotorNode
 {
@@ -13,6 +14,7 @@ public:
     {
         const std::string motors_topic = "/bpc_prp_robot/set_motor_speeds";
         const std::string line_topic = "/line_pose";
+        const std::string button_topic = "/bpc_prp_robot/buttons";
 
         // Initialize the motor speeds publisher
         motors_publisher_ = node_->create_publisher<std_msgs::msg::UInt8MultiArray>(motors_topic, 1);
@@ -20,6 +22,8 @@ public:
         // Subscribe to line position
         line_subscriber_ = node_->create_subscription<std_msgs::msg::Float32>(
             line_topic, 1, std::bind(&MotorNode::line_callback, this, std::placeholders::_1));
+
+        button_subscriber_ = node_->create_subscription<std_msgs::msg::UInt8>(button_topic, 1, std::bind(&MotorNode::button_callback, this, std::placeholders::_1));
 
         // Create timer for publishing motor speeds (50Hz)
         timer_ = node_->create_wall_timer(
@@ -32,6 +36,11 @@ public:
 private:
     void line_callback(const std_msgs::msg::Float32::SharedPtr msg)
     {
+        if (!line_follow_active_)
+        {
+            return;
+        }
+
         float line_offset = msg->data; // negative = line on left, positive = line on right
 
         // Base speed for forward motion (in the upper half of uint8 range)
@@ -101,6 +110,11 @@ private:
 
     void timer_callback()
     {
+        if (!line_follow_active_)
+        {
+            return;
+        }
+
         // Publish motor speeds
         auto msg_speeds = std_msgs::msg::UInt8MultiArray();
         msg_speeds.data = {static_cast<uint8_t>(left_speed_),
@@ -113,16 +127,33 @@ private:
                      static_cast<int>(msg_speeds.data[1]));
     }
 
+    void button_callback(const std_msgs::msg::UInt8::SharedPtr msg)
+    {
+        if (msg->data == 0)
+        {
+            line_follow_active_ = !line_follow_active_;
+            RCLCPP_INFO(node_->get_logger(), "Line following %s", line_follow_active_ ? "enabled" : "disabled");
+        }
+
+        if (msg->data == 1)
+        {
+            RCLCPP_INFO(node_->get_logger(), "Starting calibration");
+        }
+    }
+
     // Shared pointer to the main ROS node
     rclcpp::Node::SharedPtr node_;
 
     // Publishers and subscribers
     rclcpp::Publisher<std_msgs::msg::UInt8MultiArray>::SharedPtr motors_publisher_;
     rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr line_subscriber_;
+    rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr button_subscriber_;
     rclcpp::TimerBase::SharedPtr timer_;
 
     // Start time for uptime calculation
     rclcpp::Time start_time_;
+
+    bool line_follow_active_{false};
 
     // Current motor speeds
     float left_speed_{130.0f};
