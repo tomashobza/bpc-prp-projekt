@@ -33,8 +33,8 @@ public:
     }
 
 private:
-
-    uint8_t map_pid_to_speed(float pid_output) {
+    uint8_t map_pid_to_speed(float pid_output)
+    {
         // Normalize the PID output to [0, 1] if it is in [-1, 1] range
         float normalized_value = (pid_output + 1.0f) / 2.0f;
 
@@ -48,7 +48,8 @@ private:
     void line_callback(const std_msgs::msg::Float32::SharedPtr msg)
     {
         float line_offset = msg->data; // negative = line on left, positive = line on right
-        if(std::isnan(line_offset)){
+        if (std::isnan(line_offset))
+        {
             line_offset = 0;
         }
 
@@ -58,7 +59,7 @@ private:
 
         error_sum_left += p_left;
         error_sum_right += p_right;
-        
+
         // Add anti-windup - limit the integral term to prevent overflow
         const float MAX_ERROR_SUM = 1.0f;
         error_sum_left = std::min(std::max(error_sum_left, -MAX_ERROR_SUM), MAX_ERROR_SUM);
@@ -76,13 +77,13 @@ private:
         int right_speed_int = base_speed + static_cast<int>(pid_output_right);
 
         // Ensure speeds stay within valid range (127-255)
-        //left_speed_ = static_cast<uint8_t>(std::min(255, std::max(127, left_speed_int)));
-        //right_speed_ = static_cast<uint8_t>(std::min(255, std::max(127, right_speed_int)));
+        // left_speed_ = static_cast<uint8_t>(std::min(255, std::max(127, left_speed_int)));
+        // right_speed_ = static_cast<uint8_t>(std::min(255, std::max(127, right_speed_int)));
 
-        right_speed_ = 127 + static_cast<int>(pid_output_left);
-        left_speed_ = 127 + static_cast<int>(pid_output_right);
-        //right_speed_ = map_pid_to_speed(pid_output_left);
-        //left_speed_ = map_pid_to_speed(pid_output_right);
+        right_speed_ = 132 + static_cast<int>(pid_output_left);
+        left_speed_ = 132 + static_cast<int>(pid_output_right);
+        // right_speed_ = map_pid_to_speed(pid_output_left);
+        // left_speed_ = map_pid_to_speed(pid_output_right);
 
         // Update last error for next iteration
         last_error_left = p_left;
@@ -90,8 +91,6 @@ private:
 
         RCLCPP_INFO(node_->get_logger(), "PID_L: %f, PID_R: %f", pid_output_left, pid_output_right);
     }
-
-
 
     void timer_callback()
     {
@@ -122,13 +121,13 @@ private:
     std::deque<float> buffer;
 
     // PID constants
-    float kp_left = 20;
-    float ki_left = 2;
-    float kd_left = 0.1;
+    float kp_left = 10;
+    float ki_left = 0.1;
+    float kd_left = 1.0;
 
-    float kp_right = 20;
-    float ki_right = 2;
-    float kd_right = 0.1;
+    float kp_right = 10;
+    float ki_right = 0.1;
+    float kd_right = 1.0;
 
     // PID error terms
     float error_sum_left = 0.0;
