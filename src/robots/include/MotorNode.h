@@ -73,15 +73,15 @@ private:
         float pid_output_right = kp_right * p_right + ki_right * error_sum_right + kd_right * d_right;
 
         // Update wheel speeds - use int for intermediate calculation to avoid overflow
-        int left_speed_int = base_speed + static_cast<int>(pid_output_left);
-        int right_speed_int = base_speed + static_cast<int>(pid_output_right);
+        // int left_speed_int = base_speed + static_cast<int>(pid_output_left);
+        // int right_speed_int = base_speed + static_cast<int>(pid_output_right);
 
         // Ensure speeds stay within valid range (127-255)
         // left_speed_ = static_cast<uint8_t>(std::min(255, std::max(127, left_speed_int)));
         // right_speed_ = static_cast<uint8_t>(std::min(255, std::max(127, right_speed_int)));
 
-        right_speed_ = 132 + static_cast<int>(pid_output_left);
-        left_speed_ = 132 + static_cast<int>(pid_output_right);
+        right_speed_ = base_speed + static_cast<int>(pid_output_left);
+        left_speed_ = base_speed + static_cast<int>(pid_output_right);
         // right_speed_ = map_pid_to_speed(pid_output_left);
         // left_speed_ = map_pid_to_speed(pid_output_right);
 
@@ -121,13 +121,13 @@ private:
     std::deque<float> buffer;
 
     // PID constants
-    float kp_left = 10;
-    float ki_left = 0.1;
-    float kd_left = 1.0;
+    float kp_left = 20;
+    float ki_left = 0.2;
+    float kd_left = 2.0;
 
-    float kp_right = 10;
-    float ki_right = 0.1;
-    float kd_right = 1.0;
+    float kp_right = kp_left;
+    float ki_right = ki_left;
+    float kd_right = kd_left;
 
     // PID error terms
     float error_sum_left = 0.0;
@@ -136,7 +136,7 @@ private:
     float last_error_left = 0.0;
     float last_error_right = 0.0;
 
-    const uint8_t base_speed = 130;
+    const uint8_t base_speed = 150;
     const uint8_t max_speed = 255;
 
     // Current motor speeds
