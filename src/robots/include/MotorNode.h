@@ -35,10 +35,8 @@ private:
         float line_offset = msg->data; // negative = line on left, positive = line on right
 
         // Base speed for forward motion (in the upper half of uint8 range)
-        // const uint8_t base_speed = 130;  // Choose a value between 127 and 255
-        // const float max_speed_diff = 80; // Maximum speed difference between wheels
-        const uint8_t base_speed = 160;  // Choose a value between 127 and 255
-        const float max_speed_diff = 90; // Maximum speed difference between wheels
+        const uint8_t base_speed = 130;  // Choose a value between 127 and 255
+        const float max_speed_diff = 80; // Maximum speed difference between wheels
 
         // Calculate speed difference based on line offset
         // line_offset is typically between -1 and 1
