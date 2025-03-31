@@ -121,9 +121,9 @@ private:
     std::deque<float> buffer;
 
     // PID constants
-    float kp_left = 20;
-    float ki_left = 0.2;
-    float kd_left = 2.0;
+    float kp_left = 10;
+    float ki_left = 0.1;
+    float kd_left = 1.0;
 
     float kp_right = kp_left;
     float ki_right = ki_left;
@@ -136,7 +136,7 @@ private:
     float last_error_left = 0.0;
     float last_error_right = 0.0;
 
-    const uint8_t base_speed = 140;
+    const uint8_t base_speed = 135;
     const uint8_t max_speed = 255;
 
     // Current motor speeds

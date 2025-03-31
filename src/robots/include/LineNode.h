@@ -62,11 +62,13 @@ private:
         float left_value = static_cast<float>(msg->data[0]);
         float right_value = static_cast<float>(msg->data[1]);
 
+        RCLCPP_INFO(node_->get_logger(), "left_value: %f, right_value: %f", left_value, right_value);
+
         // Update min/max values for calibration
-        left_min_ = std::min(left_min_, left_value);
-        left_max_ = std::max(left_max_, left_value);
-        right_min_ = std::min(right_min_, right_value);
-        right_max_ = std::max(right_max_, right_value);
+        // left_min_ = std::min(left_min_, left_value);
+        // left_max_ = std::max(left_max_, left_value);
+        // right_min_ = std::min(right_min_, right_value);
+        // right_max_ = std::max(right_max_, right_value);
 
         // Normalize sensor values to 0-1 range
         left_normalized_ = (left_value - left_min_) / (left_max_ - left_min_);
@@ -107,10 +109,10 @@ private:
         sensor_minmax_publisher_->publish(msg_minmax);
     }
 
-    float left_min_{1024.0f};
-    float left_max_{0.0f};
-    float right_min_{1024.0f};
-    float right_max_{0.0f};
+    float left_min_{0.0f};
+    float left_max_{600.0f};
+    float right_min_{0.0f};
+    float right_max_{600.0f};
     float left_normalized_{0.0f};
     float right_normalized_{0.0f};
 };
