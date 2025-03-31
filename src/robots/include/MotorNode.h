@@ -53,37 +53,67 @@ private:
             line_offset = 0;
         }
 
+        // Add deadband to ignore very small errors
+        const float DEADBAND = 0.05f;
+        if (std::abs(line_offset) < DEADBAND)
+        {
+            line_offset = 0;
+        }
+
         // Calculate errors
         float p_left = -line_offset;
         float p_right = line_offset;
 
+        // Add smoothing - use moving average for the error
+        buffer.push_back(line_offset);
+        if (buffer.size() > SIZE)
+        {
+            buffer.pop_front();
+        }
+
+        // Calculate average error
+        float avg_error = 0;
+        for (const auto &err : buffer)
+        {
+            avg_error += err;
+        }
+        avg_error /= buffer.size();
+
+        // Use smoothed error for proportional term
+        p_left = -avg_error;
+        p_right = avg_error;
+
+        // Integral term with anti-windup
         error_sum_left += p_left;
         error_sum_right += p_right;
 
-        // Add anti-windup - limit the integral term to prevent overflow
-        const float MAX_ERROR_SUM = 1.0f;
+        const float MAX_ERROR_SUM = 0.5f; // Reduced from 1.0
         error_sum_left = std::min(std::max(error_sum_left, -MAX_ERROR_SUM), MAX_ERROR_SUM);
         error_sum_right = std::min(std::max(error_sum_right, -MAX_ERROR_SUM), MAX_ERROR_SUM);
 
+        // Derivative term - using unfiltered error for responsiveness
         float d_left = p_left - last_error_left;
         float d_right = p_right - last_error_right;
+
+        // Suggested PID values - lower P, higher D
+        // Try starting with: kp_left = 10.0, kd_left = 5.0, ki_left = 0.1
 
         // Calculate PID output for each wheel
         float pid_output_left = kp_left * p_left + ki_left * error_sum_left + kd_left * d_left;
         float pid_output_right = kp_right * p_right + ki_right * error_sum_right + kd_right * d_right;
 
-        // Update wheel speeds - use int for intermediate calculation to avoid overflow
-        // int left_speed_int = base_speed + static_cast<int>(pid_output_left);
-        // int right_speed_int = base_speed + static_cast<int>(pid_output_right);
+        // Limit PID output
+        const float MAX_PID_OUTPUT = 50.0f;
+        pid_output_left = std::min(std::max(pid_output_left, -MAX_PID_OUTPUT), MAX_PID_OUTPUT);
+        pid_output_right = std::min(std::max(pid_output_right, -MAX_PID_OUTPUT), MAX_PID_OUTPUT);
+
+        // Calculate final speeds
+        int left_speed_int = base_speed + static_cast<int>(pid_output_right); // Note: swapped based on your code
+        int right_speed_int = base_speed + static_cast<int>(pid_output_left);
 
         // Ensure speeds stay within valid range (127-255)
-        // left_speed_ = static_cast<uint8_t>(std::min(255, std::max(127, left_speed_int)));
-        // right_speed_ = static_cast<uint8_t>(std::min(255, std::max(127, right_speed_int)));
-
-        right_speed_ = base_speed + static_cast<int>(pid_output_left);
-        left_speed_ = base_speed + static_cast<int>(pid_output_right);
-        // right_speed_ = map_pid_to_speed(pid_output_left);
-        // left_speed_ = map_pid_to_speed(pid_output_right);
+        left_speed_ = static_cast<uint8_t>(std::min(255, std::max(127, left_speed_int)));
+        right_speed_ = static_cast<uint8_t>(std::min(255, std::max(127, right_speed_int)));
 
         // Update last error for next iteration
         last_error_left = p_left;
@@ -121,9 +151,9 @@ private:
     std::deque<float> buffer;
 
     // PID constants
-    float kp_left = 10;
-    float ki_left = 0.1;
-    float kd_left = 1.0;
+    float kp_left = 8.0;
+    float ki_left = 0.05;
+    float kd_left = 5.0;
 
     float kp_right = kp_left;
     float ki_right = ki_left;
@@ -136,7 +166,7 @@ private:
     float last_error_left = 0.0;
     float last_error_right = 0.0;
 
-    const uint8_t base_speed = 135;
+    const uint8_t base_speed = 140;
     const uint8_t max_speed = 255;
 
     // Current motor speeds
