@@ -6,6 +6,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 
 # Specify C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -19,6 +20,7 @@ include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${rclcpp_INCLUDE_DIRS}
   ${std_msgs_INCLUDE_DIRS}
+  ${sensor_msgs_INCLUDE_DIRS}
 )
 
 # Create executable
@@ -31,6 +33,7 @@ ament_target_dependencies(my_program
   rclcpp
   std_msgs
   geometry_msgs
+  sensor_msgs
 )
 
 # Install targets
