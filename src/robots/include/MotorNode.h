@@ -25,6 +25,7 @@ public:
     {
         const std::string motors_topic = "/bpc_prp_robot/set_motor_speeds";
         const std::string lidar_topic = "/bpc_prp_robot/lidar_avg";
+        const std::string buttons_topic = "/bpc_prp_robot/buttons";
 
         // Initialize the motor speeds publisher.
         motors_publisher_ = node_->create_publisher<std_msgs::msg::UInt8MultiArray>(motors_topic, 1);
@@ -32,6 +33,10 @@ public:
         // Subscribe to the lidar averaged data.
         lidar_subscriber_ = node_->create_subscription<std_msgs::msg::Float32MultiArray>(
             lidar_topic, 1, std::bind(&MotorNode::lidar_callback, this, std::placeholders::_1));
+
+        // Subscribe to the buttons data.
+        buttons_subscriber_ = node_->create_subscription<std_msgs::msg::UInt8>(
+            buttons_topic, 1, std::bind(&MotorNode::buttons_callback, this, std::placeholders::_1));
 
         // Create a timer for publishing motor speeds (50 Hz).
         timer_ = node_->create_wall_timer(
@@ -62,6 +67,11 @@ private:
             float front_dist = msg->data[0];
             float right_dist = msg->data[1];
             float left_dist = msg->data[2];
+
+            if (front_dist < 0.2) {
+                movement_enabled_ = false;
+                return;
+            }
 
             // Calculate corridor offset (positive if closer to left wall, negative if closer to right wall)
             float corridor_offset = right_dist - left_dist;
@@ -117,21 +127,11 @@ private:
     // Callback to handle button presses
     void buttons_callback(const std_msgs::msg::UInt8::SharedPtr msg)
     {
-        uint8_t button_state = msg->data;
-        
-        // Check if button 0 is pressed (bit 0 is set)
-        bool button0_current_state = (button_state & 0x01) != 0;
-        
-        // Toggle movement state on button press (not release)
-        if (button0_current_state && !button_pressed_)
-        {
+        RCLCPP_INFO(node_->get_logger(), "Button pressed %d", msg->data);
+
+        if (msg->data == 0) {
             movement_enabled_ = !movement_enabled_;
-            RCLCPP_INFO(node_->get_logger(), "Button 0 pressed, movement %s", 
-                        movement_enabled_ ? "enabled" : "disabled");
         }
-        
-        // Update button state for edge detection
-        button_pressed_ = button0_current_state;
     }
 
     // Timer callback to publish the current motor speeds.
@@ -166,9 +166,9 @@ private:
     algorithms::Kinematics kinematics_;
 
     // Configuration parameters.
-    const float base_linear_velocity = 0.15f;      // Base forward speed in m/s
+    const float base_linear_velocity = 0.08f;      // Base forward speed in m/s
     const float max_angular_velocity = 1.5f;       // Maximum angular velocity in rad/s
-    const float max_wheel_speed = 10.0f;           // Maximum wheel speed in rad/s for mapping
+    const float max_wheel_speed = 2.0f;           // Maximum wheel speed in rad/s for mapping
     const float front_distance_threshold = 0.5f;   // Distance threshold for slowing down (m)
 
     // Button state tracking

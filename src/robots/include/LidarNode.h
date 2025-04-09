@@ -78,7 +78,7 @@ private:
   void lidar_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
   {
     // Define the desired angles for the readings:
-    float front_angle = 0.0f;
+    float front_angle = msg->angle_max;
     float left_angle = msg->angle_max / 2.0f;
     float right_angle = msg->angle_min / 2.0f;
 
