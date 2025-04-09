@@ -23,7 +23,7 @@ int main(int argc, char *argv[])
     auto lidar_node = std::make_shared<LidarNode>(_lidar_node);
 
     // Add nodes to the executor
-    // executor->add_node(_motor_node);
+    executor->add_node(_motor_node);
     // executor->add_node(_line_node);
     executor->add_node(_lidar_node);
 

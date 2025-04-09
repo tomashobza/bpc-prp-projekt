@@ -8,6 +8,7 @@
 #include <std_msgs/msg/float32_multi_array.hpp>
 #include <std_msgs/msg/u_int8_multi_array.hpp>
 #include <std_msgs/msg/u_int32_multi_array.hpp>
+#include <std_msgs/msg/u_int8.hpp>
 #include "algorithms/pid.h"  // Include the PID logic
 #include "algorithms/kinematics.hpp"  // Include the kinematics logic
 
@@ -20,7 +21,7 @@ public:
           // Initialize PID controller with the given gains (kp, ki, kd)
           pid_corridor_(2.0f, 0.1f, 1.0f),
           // Initialize kinematics with wheel radius (m), wheel base (m), and ticks per rotation
-          kinematics_(0.032, 0.13, 584)
+          kinematics_(0.033, 0.16, 360)
     {
         const std::string motors_topic = "/bpc_prp_robot/set_motor_speeds";
         const std::string lidar_topic = "/bpc_prp_robot/lidar_avg";
@@ -76,8 +77,8 @@ private:
             // Limit the maximum angular velocity
             angular_velocity = std::min(std::max(angular_velocity, -max_angular_velocity), max_angular_velocity);
 
-            // Set linear velocity 
-            float linear_velocity = base_linear_velocity;
+            // Set linear velocity based on movement state
+            float linear_velocity = movement_enabled_ ? base_linear_velocity : 0.0f;
             
             // Slow down if approaching an obstacle in front
             if (front_dist < front_distance_threshold && front_dist > 0.0f)
@@ -95,14 +96,42 @@ private:
             left_speed_ = map_speed_to_motor_cmd(wheel_speeds.l);
             right_speed_ = map_speed_to_motor_cmd(wheel_speeds.r);
 
+            // If movement is disabled, set speeds to the stop value (127)
+            if (!movement_enabled_)
+            {
+                left_speed_ = 127;
+                right_speed_ = 127;
+            }
+
             RCLCPP_INFO(node_->get_logger(), 
-                        "Corridor: L=%.2f, R=%.2f, Offset=%.2f, Angular=%.2f, Linear=%.2f", 
-                        left_dist, right_dist, corridor_offset, angular_velocity, linear_velocity);
+                        "Corridor: L=%.2f, R=%.2f, Offset=%.2f, Angular=%.2f, Linear=%.2f, Enabled=%s", 
+                        left_dist, right_dist, corridor_offset, angular_velocity, linear_velocity,
+                        movement_enabled_ ? "true" : "false");
         }
         else
         {
             RCLCPP_WARN(node_->get_logger(), "Unexpected lidar data format!");
         }
+    }
+    
+    // Callback to handle button presses
+    void buttons_callback(const std_msgs::msg::UInt8::SharedPtr msg)
+    {
+        uint8_t button_state = msg->data;
+        
+        // Check if button 0 is pressed (bit 0 is set)
+        bool button0_current_state = (button_state & 0x01) != 0;
+        
+        // Toggle movement state on button press (not release)
+        if (button0_current_state && !button_pressed_)
+        {
+            movement_enabled_ = !movement_enabled_;
+            RCLCPP_INFO(node_->get_logger(), "Button 0 pressed, movement %s", 
+                        movement_enabled_ ? "enabled" : "disabled");
+        }
+        
+        // Update button state for edge detection
+        button_pressed_ = button0_current_state;
     }
 
     // Timer callback to publish the current motor speeds.
@@ -124,6 +153,7 @@ private:
     // Publishers and subscribers.
     rclcpp::Publisher<std_msgs::msg::UInt8MultiArray>::SharedPtr motors_publisher_;
     rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr lidar_subscriber_;
+    rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr buttons_subscriber_;
     rclcpp::TimerBase::SharedPtr timer_;
 
     // Start time for uptime calculation.
@@ -140,6 +170,10 @@ private:
     const float max_angular_velocity = 1.5f;       // Maximum angular velocity in rad/s
     const float max_wheel_speed = 10.0f;           // Maximum wheel speed in rad/s for mapping
     const float front_distance_threshold = 0.5f;   // Distance threshold for slowing down (m)
+
+    // Button state tracking
+    bool movement_enabled_;                        // Flag to enable/disable movement
+    bool button_pressed_;                          // Flag to track button press state for edge detection
 
     // Current motor speeds.
     uint8_t left_speed_ = 130;
