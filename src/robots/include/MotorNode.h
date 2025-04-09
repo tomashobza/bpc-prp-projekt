@@ -2,14 +2,10 @@
 
 #include <iostream>
 #include <cmath>
-#include <deque>
 #include <rclcpp/rclcpp.hpp>
-#include <std_msgs/msg/float32.hpp>
 #include <std_msgs/msg/float32_multi_array.hpp>
 #include <std_msgs/msg/u_int8_multi_array.hpp>
-#include <std_msgs/msg/u_int32_multi_array.hpp>
 #include <std_msgs/msg/u_int8.hpp>
-#include "algorithms/pid.h"  // Include the PID logic
 #include "algorithms/kinematics.hpp"  // Include the kinematics logic
 
 class MotorNode
@@ -18,47 +14,47 @@ public:
     MotorNode(const rclcpp::Node::SharedPtr &node)
         : node_(node),
           start_time_(node_->now()),
-          // Initialize PID controller with the given gains (kp, ki, kd)
-          pid_corridor_(2.0f, 0.1f, 1.0f),
           // Initialize kinematics with wheel radius (m), wheel base (m), and ticks per rotation
-          kinematics_(0.033, 0.16, 360)
+          kinematics_(0.033, 0.16, 360),
+          // Initialize movement state to stopped
+          movement_enabled_(false)
     {
         const std::string motors_topic = "/bpc_prp_robot/set_motor_speeds";
         const std::string lidar_topic = "/bpc_prp_robot/lidar_avg";
         const std::string buttons_topic = "/bpc_prp_robot/buttons";
 
-        // Initialize the motor speeds publisher.
+        // Initialize the motor speeds publisher
         motors_publisher_ = node_->create_publisher<std_msgs::msg::UInt8MultiArray>(motors_topic, 1);
 
-        // Subscribe to the lidar averaged data.
+        // Subscribe to the lidar averaged data
         lidar_subscriber_ = node_->create_subscription<std_msgs::msg::Float32MultiArray>(
             lidar_topic, 1, std::bind(&MotorNode::lidar_callback, this, std::placeholders::_1));
 
-        // Subscribe to the buttons data.
+        // Subscribe to the buttons data
         buttons_subscriber_ = node_->create_subscription<std_msgs::msg::UInt8>(
             buttons_topic, 1, std::bind(&MotorNode::buttons_callback, this, std::placeholders::_1));
 
-        // Create a timer for publishing motor speeds (50 Hz).
+        // Create a timer for publishing motor speeds (50 Hz)
         timer_ = node_->create_wall_timer(
             std::chrono::milliseconds(20),
             std::bind(&MotorNode::timer_callback, this));
 
-        RCLCPP_INFO(node_->get_logger(), "Motor control node started with corridor centering!");
+        RCLCPP_INFO(node_->get_logger(), "Simplified motor control node started with button control!");
     }
 
 private:
-    // Optional helper to map a wheel speed to motor command between 127 and 255.
+    // Map wheel speed to motor command between 127 and 255
     uint8_t map_speed_to_motor_cmd(float wheel_speed)
     {
         // Normalize the wheel speed to a motor command in [127, 255]
-        // Assuming wheel_speed range is [-max_wheel_speed, max_wheel_speed]
+        // TODO: the fuck does this do?
         float normalized_value = (wheel_speed + max_wheel_speed) / (2 * max_wheel_speed);
         int mapped_value = 127 + static_cast<int>((255 - 127) * normalized_value);
-        // Clamp the value between 127 and 255.
+        // Clamp the value between 127 and 255
         return static_cast<uint8_t>(std::min(255, std::max(127, mapped_value)));
     }
 
-    // Callback to update wheel speeds based on the lidar measurements.
+    // Callback to update wheel speeds based on the lidar measurements
     void lidar_callback(const std_msgs::msg::Float32MultiArray::SharedPtr msg)
     {
         // Ensure we have the expected data format (front, right, left)
@@ -68,43 +64,40 @@ private:
             float right_dist = msg->data[1];
             float left_dist = msg->data[2];
 
+            // Emergency stop if too close to front obstacle
             if (front_dist < 0.2) {
                 movement_enabled_ = false;
+                RCLCPP_WARN(node_->get_logger(), "Emergency stop: obstacle too close (%.2f m)", front_dist);
+                left_speed_ = 127;
+                right_speed_ = 127;
                 return;
             }
 
             // Calculate corridor offset (positive if closer to left wall, negative if closer to right wall)
             float corridor_offset = right_dist - left_dist;
             
-            // Calculate desired corridor center (adjust if we want to bias toward one side)
-            // If corridor_offset is 0, we're in the center
-            float desired_offset = 0.0f;  // We want to be in the center
-            float error = desired_offset - corridor_offset;
-
-            // Compute the PID output to get angular velocity
-            float angular_velocity = pid_corridor_.compute(error);
+            // Directly use the offset to calculate angular velocity with a gain factor
+            float angular_velocity = steering_gain * corridor_offset;
             
             // Limit the maximum angular velocity
             angular_velocity = std::min(std::max(angular_velocity, -max_angular_velocity), max_angular_velocity);
 
             // Set linear velocity based on movement state
-            float linear_velocity = movement_enabled_ ? base_linear_velocity : 0.0f;
-            
-            // Slow down if approaching an obstacle in front
-            if (front_dist < front_distance_threshold && front_dist > 0.0f)
-            {
-                linear_velocity *= std::min(1.0f, front_dist / front_distance_threshold);
-            }
+            float linear_velocity = movement_enabled_ ? 0.001f : 0.0f;
 
             // Create robot speed structure
             algorithms::RobotSpeed robot_speed(linear_velocity, angular_velocity);
             
             // Use inverse kinematics to get wheel speeds
             algorithms::WheelSpeed wheel_speeds = kinematics_.inverse(robot_speed);
+
+            RCLCPP_INFO(node_->get_logger(), "raw left: %f, raw right: %f", wheel_speeds.l, wheel_speeds.r);
             
             // Map wheel speeds to motor commands and store them
             left_speed_ = map_speed_to_motor_cmd(wheel_speeds.l);
             right_speed_ = map_speed_to_motor_cmd(wheel_speeds.r);
+
+            RCLCPP_INFO(node_->get_logger(), "mapped left: %d, mapped right: %d", left_speed_, right_speed_);
 
             // If movement is disabled, set speeds to the stop value (127)
             if (!movement_enabled_)
@@ -113,10 +106,10 @@ private:
                 right_speed_ = 127;
             }
 
-            RCLCPP_INFO(node_->get_logger(), 
-                        "Corridor: L=%.2f, R=%.2f, Offset=%.2f, Angular=%.2f, Linear=%.2f, Enabled=%s", 
-                        left_dist, right_dist, corridor_offset, angular_velocity, linear_velocity,
-                        movement_enabled_ ? "true" : "false");
+            // RCLCPP_INFO(node_->get_logger(), 
+            //             "Corridor: L=%.2f, R=%.2f, Offset=%.2f, Angular=%.2f, Enabled=%s", 
+            //             left_dist, right_dist, corridor_offset, angular_velocity,
+            //             movement_enabled_ ? "true" : "false");
         }
         else
         {
@@ -129,12 +122,14 @@ private:
     {
         RCLCPP_INFO(node_->get_logger(), "Button pressed %d", msg->data);
 
+        // Toggle movement state when button 0 is pressed
         if (msg->data == 0) {
             movement_enabled_ = !movement_enabled_;
+            RCLCPP_INFO(node_->get_logger(), "Movement %s", movement_enabled_ ? "enabled" : "disabled");
         }
     }
 
-    // Timer callback to publish the current motor speeds.
+    // Timer callback to publish the current motor speeds
     void timer_callback()
     {
         auto msg_speeds = std_msgs::msg::UInt8MultiArray();
@@ -148,34 +143,30 @@ private:
                      static_cast<int>(msg_speeds.data[1]));
     }
 
-    // ROS node handle.
+    // ROS node handle
     rclcpp::Node::SharedPtr node_;
-    // Publishers and subscribers.
+    // Publishers and subscribers
     rclcpp::Publisher<std_msgs::msg::UInt8MultiArray>::SharedPtr motors_publisher_;
     rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr lidar_subscriber_;
     rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr buttons_subscriber_;
     rclcpp::TimerBase::SharedPtr timer_;
 
-    // Start time for uptime calculation.
+    // Start time for uptime calculation
     rclcpp::Time start_time_;
-
-    // PID controller for corridor centering.
-    PIDController pid_corridor_;
     
     // Kinematics calculator
     algorithms::Kinematics kinematics_;
 
-    // Configuration parameters.
-    const float base_linear_velocity = 0.08f;      // Base forward speed in m/s
+    // Configuration parameters
+    const float base_linear_velocity = 0.01f;      // Base forward speed in m/s
+    const float steering_gain = -0.01f;             // Gain factor for converting offset to angular velocity
     const float max_angular_velocity = 1.5f;       // Maximum angular velocity in rad/s
-    const float max_wheel_speed = 2.0f;           // Maximum wheel speed in rad/s for mapping
-    const float front_distance_threshold = 0.5f;   // Distance threshold for slowing down (m)
+    const float max_wheel_speed = 10.0f;            // Maximum wheel speed in rad/s for mapping
 
     // Button state tracking
     bool movement_enabled_;                        // Flag to enable/disable movement
-    bool button_pressed_;                          // Flag to track button press state for edge detection
 
-    // Current motor speeds.
-    uint8_t left_speed_ = 130;
-    uint8_t right_speed_ = 130;
+    // Current motor speeds
+    uint8_t left_speed_ = 127;
+    uint8_t right_speed_ = 127;
 };
