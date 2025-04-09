@@ -22,12 +22,17 @@ public:
         lidar_subscriber_ = node_->create_subscription<sensor_msgs::msg::LaserScan>(
             "/bpc_prp_robot/lidar", 10,
             std::bind(&LidarNode::on_lidar_msg, this, std::placeholders::_1));
+
+        avg_dist_publisher_ = node_->create_publisher<std_msgs::msg::UInt8MultiArray>(
+                "/motor_speeds/update", 10);
+        
     };
 
     ~LidarNode() {}
 
 private:
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr lidar_subscriber_;
+    rclcpp::Publisher<std_msgs::msg::UInt8MultiArray>::SharedPtr avg_dist_publisher_;
     rclcpp::Node::SharedPtr node_;
 
     void on_lidar_msg(const sensor_msgs::msg::LaserScan::SharedPtr msg)
@@ -63,8 +68,33 @@ private:
         float back_avg  = get_avg(M_PI);
         float right_avg = get_avg(-M_PI_2);
 
+
+        std_msgs::msg::UInt8MultiArray msg_out;
+        
+        if(std::abs((left_avg - right_avg)) < 0.1) {
+            msg_out.data = {140, 140};
+            RCLCPP_INFO(node_->get_logger(), "go straight");
+        } else if(left_avg > right_avg) {
+            msg_out.data = {136, 133};
+            RCLCPP_INFO(node_->get_logger(), "go right");
+        } else if (right_avg > left_avg){
+            msg_out.data = {133, 136};
+            RCLCPP_INFO(node_->get_logger(), "go left");
+        } else {
+            msg_out.data = {127, 127};
+        }
+
+        if(back_avg < 0.25) {
+            msg_out.data = {120,120};
+        }
+        
+        avg_dist_publisher_->publish(msg_out);
+
+        /*
+        
         RCLCPP_INFO(node_->get_logger(),
                     "Front: %.2f m | Left: %.2f m | Back: %.2f m | Right: %.2f m",
                     front_avg, left_avg, back_avg, right_avg);
+        */
     }
 };
