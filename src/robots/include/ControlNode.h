@@ -12,23 +12,23 @@
 #include <numeric>
 
 
-class LidarNode
+class ControlNode
 {
 public:
-    LidarNode(const rclcpp::Node::SharedPtr &node)
+    ControlNode(const rclcpp::Node::SharedPtr &node)
         : node_(node)
     {
         RCLCPP_INFO(node_->get_logger(), "Lidar node started!");
         lidar_subscriber_ = node_->create_subscription<sensor_msgs::msg::LaserScan>(
             "/bpc_prp_robot/lidar", 10,
-            std::bind(&LidarNode::on_lidar_msg, this, std::placeholders::_1));
-
+            std::bind(&ControlNode::on_lidar_msg, this, std::placeholders::_1));
+        
         speed_publisher_ = node_->create_publisher<std_msgs::msg::UInt8MultiArray>(
                 "/motor_speeds/update", 10);
         
     };
 
-    ~LidarNode() {}
+    ~ControlNode() {}
 
 private:
     rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr lidar_subscriber_;
