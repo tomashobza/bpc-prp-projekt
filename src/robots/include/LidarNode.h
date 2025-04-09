@@ -2,6 +2,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
+#include <std_msgs/msg/float32_multi_array.hpp>
 #include <cmath>
 #include <limits>
 #include <algorithm>
@@ -18,6 +19,10 @@ public:
     lidar_subscription_ = node_->create_subscription<sensor_msgs::msg::LaserScan>(
       "/bpc_prp_robot/lidar", 10,
       std::bind(&LidarNode::lidar_callback, this, std::placeholders::_1));
+
+    // Create a publisher for the averaged measurements (order: front, right, left).
+    lidar_avg_publisher_ = node_->create_publisher<std_msgs::msg::Float32MultiArray>(
+      "/bpc_prp_robot/lidar_avg", 10);
   }
 
   ~LidarNode() {}
@@ -25,6 +30,7 @@ public:
 private:
   rclcpp::Node::SharedPtr node_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr lidar_subscription_;
+  rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr lidar_avg_publisher_;
 
   // Static constant for the angular window (in radians) used for averaging.
   static constexpr float k_angle_window = M_PI / 20.0f;
@@ -57,7 +63,7 @@ private:
     for (int i = lower_index; i <= upper_index; i++)
     {
       float range_val = msg->ranges[i];
-      // Only include valid (finite) measurements in the average.
+      // Only include valid (finite) measurements.
       if (std::isfinite(range_val))
       {
         sum += range_val;
@@ -65,24 +71,13 @@ private:
       }
     }
 
-    if (count > 0)
-      return sum / count;
-    else
-      return 0.0f;
+    return (count > 0) ? (sum / static_cast<float>(count)) : 0.0f;
   }
 
   // Callback function processes each incoming LaserScan message.
   void lidar_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
   {
-    // Log basic information about the scan.
-    // RCLCPP_INFO(node_->get_logger(),
-    //             "LaserScan received: angle_min: %.2f, angle_max: %.2f, angle_increment: %.4f, ranges count: %zu",
-    //             msg->angle_min, msg->angle_max, msg->angle_increment, msg->ranges.size());
-
     // Define the desired angles for the readings:
-    // - Front: assumed to be 0 rad (straight ahead)
-    // - Left: computed as half of the minimum angle (you may adjust this based on your setup)
-    // - Right: computed as half of the maximum angle
     float front_angle = 0.0f;
     float left_angle = msg->angle_max / 2.0f;
     float right_angle = msg->angle_min / 2.0f;
@@ -92,12 +87,17 @@ private:
     float left_avg  = average_range_at_angle(left_angle,  k_angle_window, msg);
     float right_avg = average_range_at_angle(right_angle, k_angle_window, msg);
 
-    // Log the averaged distances for diagnostics.
-    // RCLCPP_INFO(node_->get_logger(),
-    //             "Averaged Distances -> Front (%.2f ± %.2f rad): %.2f, Left (%.2f ± %.2f rad): %.2f, Right (%.2f ± %.2f rad): %.2f",
-    //             front_angle, k_angle_window, front_avg,
-    //             left_angle, k_angle_window, left_avg,
-    //             right_angle, k_angle_window, right_avg);
-    RCLCPP_INFO(node_->get_logger(), "Offset: %g", right_avg-left_avg);
+    // Log the offset (for example, right minus left).
+    // RCLCPP_INFO(node_->get_logger(), "Offset (Right - Left): %g", right_avg - left_avg);
+
+    // Create a message to publish the averaged measurements: order: front, right, left.
+    std_msgs::msg::Float32MultiArray avg_msg;
+    avg_msg.data.resize(3);
+    avg_msg.data[0] = front_avg;
+    avg_msg.data[1] = right_avg;
+    avg_msg.data[2] = left_avg;
+
+    // Publish the averaged measurements.
+    lidar_avg_publisher_->publish(avg_msg);
   }
 };
