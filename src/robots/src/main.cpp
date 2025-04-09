@@ -3,6 +3,7 @@
 #include "MotorNode.h"
 #include "EncoderNode.h"
 #include "LineNode.h"
+#include "LidarNode.h"
 
 int main(int argc, char *argv[])
 {
@@ -12,16 +13,19 @@ int main(int argc, char *argv[])
     auto executor = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
 
     // Create multiple nodes
-    auto node1 = std::make_shared<rclcpp::Node>("motor_node");
-    auto node2 = std::make_shared<rclcpp::Node>("line_node");
+    auto _motor_node = std::make_shared<rclcpp::Node>("motor_node");
+    auto _line_node = std::make_shared<rclcpp::Node>("line_node");
+    auto _lidar_node = std::make_shared<rclcpp::Node>("lidar_node");
 
     // Create instances of RosExampleClass using the existing nodes
-    auto motor_node = std::make_shared<MotorNode>(node1);
-    auto line_node = std::make_shared<LineNode>(node2);
+    auto motor_node = std::make_shared<MotorNode>(_motor_node);
+    auto line_node = std::make_shared<LineNode>(_line_node);
+    auto lidar_node = std::make_shared<LidarNode>(_lidar_node);
 
     // Add nodes to the executor
-    executor->add_node(node1);
-    executor->add_node(node2);
+    // executor->add_node(_motor_node);
+    // executor->add_node(_line_node);
+    executor->add_node(_lidar_node);
 
     // Run the executor (handles callbacks for both nodes)
     executor->spin();

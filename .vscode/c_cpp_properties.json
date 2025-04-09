@@ -3,7 +3,9 @@
     {
       "name": "macos-clang-arm64",
       "includePath": [
-        "${workspaceFolder}/**"
+        "${workspaceFolder}/**/**",
+        "/opt/ros/humble/**/**",
+        "${workspaceFolder}/src/robots/include/**"
       ],
       "compilerPath": "/opt/homebrew/opt/llvm/bin/clang",
       "cStandard": "${default}",
