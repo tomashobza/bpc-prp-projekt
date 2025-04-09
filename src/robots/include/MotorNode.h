@@ -20,7 +20,7 @@ public:
           // Initialize PID controller with the given gains (kp, ki, kd)
           pid_corridor_(2.0f, 0.1f, 1.0f),
           // Initialize kinematics with wheel radius (m), wheel base (m), and ticks per rotation
-          kinematics_(0.033, 0.16, 360)
+          kinematics_(0.032, 0.13, 584)
     {
         const std::string motors_topic = "/bpc_prp_robot/set_motor_speeds";
         const std::string lidar_topic = "/bpc_prp_robot/lidar_avg";
