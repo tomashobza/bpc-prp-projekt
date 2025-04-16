@@ -8,6 +8,7 @@
 #include <std_msgs/msg/u_int8_multi_array.hpp>
 #include <std_msgs/msg/u_int8.hpp>
 #include "algorithms/kinematics.hpp"  // Include the kinematics logic
+#include "algorithms/pid.h"
 
 class MotorNode
 {
@@ -16,8 +17,19 @@ public:
     : node_(node),
       // Initialize kinematics with wheel radius (m), wheel base (m), and ticks per rotation
       kinematics_(0.033, 0.16, 360),
+      pid_(node_->declare_parameter("kp", 0.5),
+               node_->declare_parameter("ki", 0.05),
+               node_->declare_parameter("kd", 0.2)),
       movement_enabled_(false)
   {
+    // Initialize PID windup
+    pid_.setMaxErrorSum(node_->declare_parameter("max_i", 0.2));
+
+    // Set up parameter callback
+    params_callback_handle_ = node_->add_on_set_parameters_callback(
+      std::bind(&MotorNode::parametersCallback, this, std::placeholders::_1));
+
+    // Topics
     const std::string motors_topic  = "/bpc_prp_robot/set_motor_speeds";
     const std::string lidar_topic   = "/bpc_prp_robot/lidar_avg";
     const std::string buttons_topic = "/bpc_prp_robot/buttons";
@@ -42,6 +54,37 @@ public:
   }
 
 private:
+  // Update the PID parameters on change of ROS2 parameters
+  rcl_interfaces::msg::SetParametersResult parametersCallback(
+    const std::vector<rclcpp::Parameter> &parameters)
+  {
+    rcl_interfaces::msg::SetParametersResult result;
+    result.successful = true;
+    result.reason = "success";
+
+    // Update PID parameters if any changed
+    for (const auto &param : parameters)
+    {
+        if (param.get_name() == "kp" || param.get_name() == "ki" || param.get_name() == "kd" || param.get_name() == "max_i")
+        {
+            float kp = node_->get_parameter("kp").as_double();
+            float ki = node_->get_parameter("ki").as_double();
+            float kd = node_->get_parameter("kd").as_double();
+
+            float max_i = node_->get_parameter("max_i").as_double();
+            
+            pid_.updateParameters(kp, ki, kd);
+            pid_.setMaxErrorSum(max_i);
+            pid_.reset();
+            RCLCPP_INFO(node_->get_logger(), "Updated PID parameters: kp=%.2f, ki=%.2f, kd=%.2f",
+                      kp, ki, kd);
+            break;  // We've updated all parameters, no need to continue checking
+        }
+    }
+
+    return result;
+  }
+
   // Convert wheel speed (m/s) to a motor command.
   // The conversion multiplies the wheel speed by a coefficient and adds 127 (the stop/neutral value).
   // Positive speeds will result in command values greater than 127, and negative speeds in values lower than 127.
@@ -80,7 +123,8 @@ private:
 
       // Compute angular velocity with a global steering gain.
       // TODO: connect PID controller to the angular velocity
-      float angular_velocity = global_steering_gain_ * corridor_offset;
+      float angular_velocity = pid_.compute(corridor_offset);
+      // float angular_velocity = global_steering_gain_ * corridor_offset;
 
       // Set the linear velocity if movement is enabled, otherwise use 0.
       float linear_velocity = base_linear_velocity_;
@@ -119,6 +163,9 @@ private:
     if (msg->data == 0)
     {
       movement_enabled_ = !movement_enabled_;
+      if (movement_enabled_) {
+        pid_.reset();
+      }
       RCLCPP_INFO(node_->get_logger(), "Movement %s", movement_enabled_ ? "enabled" : "disabled");
     }
   }
@@ -140,8 +187,14 @@ private:
   rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr buttons_subscriber_;
   rclcpp::TimerBase::SharedPtr timer_;
 
+  // Parameter callback handle
+  rclcpp::Node::OnSetParametersCallbackHandle::SharedPtr params_callback_handle_;
+
   // Kinematics object for inverse kinematics calculations.
   algorithms::Kinematics kinematics_;
+
+  // PID Controller
+  PIDController pid_;
 
   // Flag to determine if movement is enabled.
   bool movement_enabled_;
