@@ -79,8 +79,10 @@ private:
   {
     // Define the desired angles for the readings:
     float front_angle = msg->angle_max;
-    float left_angle = msg->angle_max / 2.0f;
-    float right_angle = msg->angle_min / 2.0f;
+    float left_angle = msg->angle_max / 1.5f;
+    float right_angle = msg->angle_min / 1.5f;
+
+    RCLCPP_INFO(node_->get_logger(), "MIN %f MAX %f LEFT %f RIGHT %f", msg->angle_max, msg->angle_min, left_angle, right_angle);
 
     // Compute the average distances for each direction using the angular window.
     float front_avg = average_range_at_angle(front_angle, k_angle_window, msg);
