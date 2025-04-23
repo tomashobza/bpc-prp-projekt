@@ -201,8 +201,6 @@ private:
 
         update_led_color(current_state_);
 
-        RCLCPP_INFO(node_->get_logger(), "current state %d", current_state_);
-
         if (front_dist_ == -1 || right_dist_ == -1 || left_dist_ == -1) {
             RCLCPP_INFO(node_->get_logger(), "Waiting for lidar data");
             return;

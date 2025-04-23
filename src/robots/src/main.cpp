@@ -5,6 +5,7 @@
 #include "LineNode.h"
 #include "LidarNode.h"
 #include "ControlNode.h"
+#include "ImuNode.h"
 
 int main(int argc, char *argv[])
 {
@@ -26,6 +27,7 @@ int main(int argc, char *argv[])
     auto line_node = std::make_shared<LineNode>(_line_node);
     auto lidar_node = std::make_shared<LidarNode>(_lidar_node);
     auto control_node = std::make_shared<ControlNode>(_control_node);
+    auto imu_node = std::make_shared<ImuNode>();
 
     // Add nodes to the executor
     
@@ -34,6 +36,7 @@ int main(int argc, char *argv[])
     // executor->add_node(_line_node);
     executor->add_node(_lidar_node);
     executor->add_node(_control_node);
+    executor->add_node(imu_node); 
 
     // Run the executor (handles callbacks for both nodes)
     executor->spin();
