@@ -14,6 +14,7 @@ enum class RobotState {
     FOLLOWING_CORRIDOR,
     ALIGN_TURN,
     TURN,
+    POST_ALIGN_TURN,
     EMERGENCY_STOP
 };
 
@@ -141,6 +142,10 @@ private:
                 // Yellow
                 led_msg.data = {128, 0, 128};
                 break;
+            case RobotState::POST_ALIGN_TURN:
+                // Yellow
+                led_msg.data = {128, 0, 128};
+                break;
             case RobotState::TURN:
                 // Yellow
                 led_msg.data = {255, 255, 255};
@@ -156,7 +161,6 @@ private:
 
     void on_turn_msg(const std_msgs::msg::Int8::SharedPtr msg) {
         current_turn_type_ = static_cast<TurnType>(msg->data);
-        RCLCPP_INFO(node_->get_logger(), "Turn type received: %d", msg->data);
     }
 
     void on_pose_msg(const geometry_msgs::msg::Pose2D::SharedPtr msg) {
@@ -268,18 +272,18 @@ private:
                     last_button_pressed_ = -1;
                     RCLCPP_INFO(node_->get_logger(), "Transitioning from IDLE to FOLLOWING_CORRIDOR state");
                 }
-                else if (last_button_pressed_ == 1) {
-                    current_state_ = RobotState::ALIGN_TURN;
-                    align_start_x_ = current_x_;
-                    align_start_y_ = current_y_;
-                    last_button_pressed_ = -1;
-                    RCLCPP_INFO(node_->get_logger(), "Transitioning from IDLE to ALIGN_TURN state");
-                } else if (last_button_pressed_ == 2) {
-                    current_state_ = RobotState::TURN;
-                    start_yaw_ = current_yaw_;
-                    last_button_pressed_ = -1;
-                    RCLCPP_INFO(node_->get_logger(), "Transitioning from IDLE to TURN state");
-                }
+                // else if (last_button_pressed_ == 1) {
+                //     current_state_ = RobotState::ALIGN_TURN;
+                //     align_start_x_ = current_x_;
+                //     align_start_y_ = current_y_;
+                //     last_button_pressed_ = -1;
+                //     RCLCPP_INFO(node_->get_logger(), "Transitioning from IDLE to ALIGN_TURN state");
+                // } else if (last_button_pressed_ == 2) {
+                //     current_state_ = RobotState::TURN;
+                //     start_yaw_ = current_yaw_;
+                //     last_button_pressed_ = -1;
+                //     RCLCPP_INFO(node_->get_logger(), "Transitioning from IDLE to TURN state");
+                // }
                 break;
             }
             case RobotState::FOLLOWING_CORRIDOR: {
@@ -319,6 +323,9 @@ private:
                             RCLCPP_INFO(node_->get_logger(), "Starting right turn");
                             break;
                         case TurnType::CROSS:
+                            current_state_ = RobotState::POST_ALIGN_TURN;
+                            RCLCPP_INFO(node_->get_logger(), "Detected crossing, transition to POST_ALIGN_TURN");
+                            break;
                         case TurnType::LEFT_FRONT:
                         case TurnType::RIGHT_FRONT:
                         case TurnType::T_TURN:
@@ -351,8 +358,8 @@ private:
                 
                 // Target reached within tolerance
                 if (std::abs(target_turn_angle_ - angle_turned) < angle_tolerance) {
-                    current_state_ = RobotState::IDLE;
-                    RCLCPP_INFO(node_->get_logger(), "Turn complete (%.2f rad), transitioning to IDLE", angle_turned);
+                    current_state_ = RobotState::POST_ALIGN_TURN;
+                    RCLCPP_INFO(node_->get_logger(), "Turn complete (%.2f rad), transitioning to POST_ALIGN_TURN", angle_turned);
                 } else {
                     // Calculate angular velocity using PID
                     float angular_velocity = calculate_turn_pid_angular_velocity(target_turn_angle_);
@@ -362,6 +369,22 @@ private:
                     
                     // Create robot speed command
                     algorithms::RobotSpeed robot_speed(linear_velocity, angular_velocity);
+                    algorithms::WheelSpeed wheel_speeds = kinematics_.inverse(robot_speed);
+                    
+                    motor_command.data = {
+                        convert_speed_to_command(wheel_speeds.l),
+                        convert_speed_to_command(wheel_speeds.r)
+                    };
+                }
+                break;
+            }
+            case RobotState::POST_ALIGN_TURN: {
+                if (has_moved_required_distance()) {
+                    current_state_ = RobotState::FOLLOWING_CORRIDOR;
+                    
+                    RCLCPP_INFO(node_->get_logger(), "Alignment complete, transitioning to FOLLOWING_CORRIDOR");
+                } else if (front_dist_ > emergency_stop_threshold_) {
+                    algorithms::RobotSpeed robot_speed(base_linear_velocity_, 0.0);
                     algorithms::WheelSpeed wheel_speeds = kinematics_.inverse(robot_speed);
                     
                     motor_command.data = {
