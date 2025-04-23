@@ -159,6 +159,13 @@ private:
                     last_button_pressed_ = -1;
                     RCLCPP_INFO(node_->get_logger(), "Transitioning from IDLE to FOLLOWING_CORRIDOR state");
                 }
+                else if (last_button_pressed_ == 1) {
+                    current_state_ = RobotState::ALIGN_TURN;
+                    align_start_x_ = current_x_;
+                    align_start_y_ = current_y_;
+                    last_button_pressed_ = -1;
+                    RCLCPP_INFO(node_->get_logger(), "Transitioning from IDLE to ALIGN_TURN state");
+                }
                 break;
             }
             case RobotState::FOLLOWING_CORRIDOR: {
