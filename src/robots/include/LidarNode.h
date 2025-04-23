@@ -33,7 +33,7 @@ private:
   rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr lidar_avg_publisher_;
 
   // Static constant for the angular window (in radians) used for averaging.
-  static constexpr float k_angle_window = M_PI / 20.0f;
+  static constexpr float k_angle_window = M_PI / 40.0f;
 
   // Helper function to compute the index in the ranges array corresponding to a given angle.
   int compute_index_for_angle(float desired_angle, const sensor_msgs::msg::LaserScan::SharedPtr msg)
@@ -79,10 +79,10 @@ private:
   {
     // Define the desired angles for the readings:
     float front_angle = msg->angle_max;
-    float left_angle = msg->angle_max / 1.5f;
-    float right_angle = msg->angle_min / 1.5f;
+    float left_angle = msg->angle_min / 1.5f;
+    float right_angle = msg->angle_max / 1.5f;
 
-    RCLCPP_INFO(node_->get_logger(), "MIN %f MAX %f LEFT %f RIGHT %f", msg->angle_max, msg->angle_min, left_angle, right_angle);
+    // RCLCPP_INFO(node_->get_logger(), "MIN %f MAX %f LEFT %f RIGHT %f", msg->angle_max, msg->angle_min, left_angle, right_angle);
 
     // Compute the average distances for each direction using the angular window.
     float front_avg = average_range_at_angle(front_angle, k_angle_window, msg);

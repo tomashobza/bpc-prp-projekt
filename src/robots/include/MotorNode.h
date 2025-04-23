@@ -75,8 +75,19 @@ private:
         return;
       }
 
+      if (last_left_dist != -1) {
+        float dist_diff_left = std::fabs(left_dist - last_left_dist);
+        float dist_diff_right = std::fabs(right_dist - last_right_dist);
+        if (dist_diff_left > 0.2) {
+          RCLCPP_INFO(node_->get_logger(), "ZATACKA VLEVO");
+        }
+        if (dist_diff_right > 0.2) {
+          RCLCPP_INFO(node_->get_logger(), "ZATACKA VPRAVO");
+        }
+      }
+
       // Calculate the corridor offset: positive if closer to left wall, negative if closer to right wall.
-      float corridor_offset = right_dist - left_dist;
+      float corridor_offset = left_dist - right_dist;
 
       // Compute angular velocity with a global steering gain.
       // TODO: connect PID controller to the angular velocity
@@ -88,12 +99,12 @@ private:
       // Calculate desired robot speed.
       algorithms::RobotSpeed robot_speed(linear_velocity, angular_velocity);
 
-      RCLCPP_INFO(node_->get_logger(), "angular_speed: %g", angular_velocity);
+      // RCLCPP_INFO(node_->get_logger(), "angular_speed: %g", angular_velocity);
 
       // Use inverse kinematics to compute wheel speeds (in m/s).
       algorithms::WheelSpeed wheel_speeds = kinematics_.inverse(robot_speed);
 
-      RCLCPP_INFO(node_->get_logger(), "raw left: %f, raw right: %f", wheel_speeds.l, wheel_speeds.r);
+      // RCLCPP_INFO(node_->get_logger(), "raw left: %f, raw right: %f", wheel_speeds.l, wheel_speeds.r);
 
       // Convert the wheel speeds to motor commands using the simplified approach.
       if (movement_enabled_) {
@@ -104,7 +115,11 @@ private:
         right_command_ = 127;
       }
 
-      RCLCPP_INFO(node_->get_logger(), "mapped left: %d, mapped right: %d", left_command_, right_command_);
+      // RCLCPP_INFO(node_->get_logger(), "mapped left: %d, mapped right: %d", left_command_, right_command_);
+
+      // save lidar reading
+      last_left_dist = left_dist;
+      last_right_dist = right_dist;
     }
     else
     {
@@ -149,6 +164,10 @@ private:
   // Motor command values (127 represents a stop).
   uint8_t left_command_  = 127;
   uint8_t right_command_ = 127;
+
+  // Save last lidar reading
+  float last_right_dist = -1;
+  float last_left_dist = -1;
 
   // Coefficient to convert wheel speed (m/s) to a motor command increment.
   const float speed_coefficient_ = 10.0f;  // Adjust this value for the desired sensitivity
