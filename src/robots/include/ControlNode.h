@@ -13,6 +13,7 @@ enum class RobotState {
     IDLE,
     FOLLOWING_CORRIDOR,
     ALIGN_TURN,
+    TURN,
     EMERGENCY_STOP
 };
 
@@ -46,6 +47,10 @@ public:
 
         motors_publisher_ = node_->create_publisher<std_msgs::msg::UInt8MultiArray>(
             "/bpc_prp_robot/set_motor_speeds", 1);
+        
+        integrated_yaw_subscriber_ = node_->create_subscription<std_msgs::msg::Float32>(
+            "/integrated_yaw", 1,
+            std::bind(&ControlNode::on_yaw_msg, this, std::placeholders::_1));
 
         // New publisher for RGB LEDs
         leds_publisher_ = node_->create_publisher<std_msgs::msg::UInt8MultiArray>(
@@ -69,12 +74,17 @@ private:
     rclcpp::Subscription<geometry_msgs::msg::Pose2D>::SharedPtr pose_subscriber_;
     rclcpp::Publisher<std_msgs::msg::UInt8MultiArray>::SharedPtr motors_publisher_;
     rclcpp::Publisher<std_msgs::msg::UInt8MultiArray>::SharedPtr leds_publisher_;
+    rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr integrated_yaw_subscriber_;
     rclcpp::TimerBase::SharedPtr timer_;
-
+    
     algorithms::Kinematics kinematics_;
     RobotState current_state_;
     bool end_of_corridor_detected_;
     int last_button_pressed_;
+    
+    // Rotation tracking
+    float current_yaw_{0.0f};
+    float start_yaw_{0.0f};
 
     // Position tracking
     double current_x_{0.0};
@@ -176,6 +186,10 @@ private:
         }
     }
 
+    void on_yaw_msg(const std_msgs::msg::Float32::SharedPtr msg) {
+        current_yaw_ = msg->data;
+    }
+
     float calculate_pid_angular_velocity() {
         float corridor_offset = left_dist_ - right_dist_;
         
@@ -253,8 +267,9 @@ private:
             case RobotState::ALIGN_TURN: {
                 if (has_moved_required_distance()) {
                     // TODO: read the type of turn and proceed to turn that way
-                    current_state_ = RobotState::IDLE;
-                    RCLCPP_INFO(node_->get_logger(), "Alignment complete, transitioning to IDLE");
+                    current_state_ = RobotState::TURN;
+                    start_yaw_ = current_yaw_;
+                    RCLCPP_INFO(node_->get_logger(), "Alignment complete, transitioning to TURN");
                 } else if (front_dist_ > emergency_stop_threshold_) {
                     algorithms::RobotSpeed robot_speed(base_linear_velocity_, 0.0);
                     algorithms::WheelSpeed wheel_speeds = kinematics_.inverse(robot_speed);
@@ -264,6 +279,10 @@ private:
                         convert_speed_to_command(wheel_speeds.r)
                     };
                 }
+                break;
+            }
+            case RobotState::TURN: {
+                // TODO: tell me this part
                 break;
             }
             case RobotState::EMERGENCY_STOP: {
