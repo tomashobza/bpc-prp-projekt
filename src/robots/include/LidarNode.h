@@ -3,9 +3,12 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
 #include <std_msgs/msg/float32_multi_array.hpp>
+#include <std_msgs/msg/int8.hpp>
 #include <cmath>
 #include <limits>
 #include <algorithm>
+#include "algorithms/turns.hpp"
+
 
 class LidarNode
 {
@@ -23,6 +26,10 @@ public:
     // Create a publisher for the averaged measurements (order: front, right, left).
     lidar_avg_publisher_ = node_->create_publisher<std_msgs::msg::Float32MultiArray>(
       "/bpc_prp_robot/lidar_avg", 10);
+
+    // Create a publisher for the detected turn type
+    lidar_turn_publisher_ = node_->create_publisher<std_msgs::msg::Int8>(
+      "/bpc_prp_robot/detected_turn", 10);
   }
 
   ~LidarNode() {}
@@ -31,9 +38,13 @@ private:
   rclcpp::Node::SharedPtr node_;
   rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr lidar_subscription_;
   rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr lidar_avg_publisher_;
+  rclcpp::Publisher<std_msgs::msg::Int8>::SharedPtr lidar_turn_publisher_;
 
   // Static constant for the angular window (in radians) used for averaging.
   static constexpr float k_angle_window = M_PI / 40.0f;
+  
+  // Distance threshold to determine if a direction is "open"
+  static constexpr float k_open_threshold = 0.5f;
 
   // Helper function to compute the index in the ranges array corresponding to a given angle.
   int compute_index_for_angle(float desired_angle, const sensor_msgs::msg::LaserScan::SharedPtr msg)
@@ -74,6 +85,32 @@ private:
     return (count > 0) ? (sum / static_cast<float>(count)) : 0.0f;
   }
 
+  TurnType get_turn(float front, float left, float right) {
+    // Determine which directions are "open" based on a threshold
+    bool is_front_open = front > k_open_threshold;
+    bool is_left_open = left > k_open_threshold;
+    bool is_right_open = right > k_open_threshold;
+    
+    // Decision tree for all possible turn types
+    if (is_left_open && is_right_open && is_front_open) {
+      return TurnType::CROSS;  // All directions open = crossroad
+    } else if (is_left_open && is_right_open && !is_front_open) {
+      return TurnType::T_TURN;  // Left and right open, front closed = T junction
+    } else if (is_left_open && is_front_open && !is_right_open) {
+      return TurnType::LEFT_FRONT;  // Left and front open
+    } else if (is_right_open && is_front_open && !is_left_open) {
+      return TurnType::RIGHT_FRONT;  // Right and front open
+    } else if (is_left_open && !is_right_open && !is_front_open) {
+      return TurnType::LEFT;  // Only left open
+    } else if (is_right_open && !is_left_open && !is_front_open) {
+      return TurnType::RIGHT;  // Only right open
+    } else {
+      // Default case if none of the conditions are met (e.g., all closed)
+      // You might want to add a DEAD_END enum case for this scenario
+      return TurnType::RIGHT;  // Default to some value
+    }
+  }
+
   // Callback function processes each incoming LaserScan message.
   void lidar_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
   {
@@ -82,16 +119,20 @@ private:
     float left_angle = msg->angle_min / 1.5f;
     float right_angle = msg->angle_max / 1.5f;
 
-    // RCLCPP_INFO(node_->get_logger(), "MIN %f MAX %f LEFT %f RIGHT %f", msg->angle_max, msg->angle_min, left_angle, right_angle);
+    float hard_left = msg->angle_min / 2.0f;
+    float hard_right = msg->angle_max / 2.0f;
 
     // Compute the average distances for each direction using the angular window.
     float front_avg = average_range_at_angle(front_angle, k_angle_window, msg);
     float left_avg  = average_range_at_angle(left_angle,  k_angle_window, msg);
     float right_avg = average_range_at_angle(right_angle, k_angle_window, msg);
 
-    // Log the offset (for example, right minus left).
-    // RCLCPP_INFO(node_->get_logger(), "Offset (Right - Left): %g", right_avg - left_avg);
+    float hard_left_avg = average_range_at_angle(hard_left, k_angle_window, msg);
+    float hard_right_avg = average_range_at_angle(hard_right, k_angle_window, msg);
 
+    // Determine the turn type based on the measurements
+    TurnType turn = get_turn(front_avg, hard_left_avg, hard_right_avg);
+    
     // Create a message to publish the averaged measurements: order: front, right, left.
     std_msgs::msg::Float32MultiArray avg_msg;
     avg_msg.data.resize(3);
@@ -99,7 +140,16 @@ private:
     avg_msg.data[1] = right_avg;
     avg_msg.data[2] = left_avg;
 
-    // Publish the averaged measurements.
+    // Create a separate message for the turn type
+    std_msgs::msg::Int8 turn_msg;
+    turn_msg.data = static_cast<int8_t>(turn);
+
+    // Publish both messages
     lidar_avg_publisher_->publish(avg_msg);
+    lidar_turn_publisher_->publish(turn_msg);
+    
+    // Optionally log the detected turn
+    RCLCPP_INFO(node_->get_logger(), "Detected turn: %d (F: %g, L: %g, R: %g)", 
+                static_cast<int>(turn), front_avg, hard_left_avg, hard_right_avg);
   }
 };
