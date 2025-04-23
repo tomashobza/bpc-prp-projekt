@@ -26,7 +26,7 @@ public:
           current_state_(RobotState::IDLE),
           end_of_corridor_detected_(false),
           last_button_pressed_(-1),
-          ALIGN_TO_CENTER_DISTANCE(0.3f) // 30 centimeters in meters
+          ALIGN_TO_CENTER_DISTANCE(0.25f) // 30 centimeters in meters
     {
         RCLCPP_INFO(node_->get_logger(), "Control node started!");
 
@@ -120,7 +120,7 @@ private:
     const float kd_{0.1f};
 
     // Constants
-    const float corner_detection_threshold_{0.2f};
+    const float corner_detection_threshold_{0.3f};
     const float speed_coefficient_{10.0f};
     const float base_linear_velocity_{0.02f};
     const float emergency_stop_threshold_{0.15f};
@@ -174,7 +174,7 @@ private:
         double dy = current_y_ - align_start_y_;
         double distance = std::sqrt(dx*dx + dy*dy);
         
-        RCLCPP_INFO(node_->get_logger(), "Distance moved: %.3f m", distance);
+        // RCLCPP_INFO(node_->get_logger(), "Distance moved: %.3f m", distance);
         return distance >= ALIGN_TO_CENTER_DISTANCE;
     }
 
@@ -324,6 +324,8 @@ private:
                             break;
                         case TurnType::CROSS:
                             current_state_ = RobotState::POST_ALIGN_TURN;
+                            align_start_x_ = current_x_;
+                            align_start_y_ = current_y_;
                             RCLCPP_INFO(node_->get_logger(), "Detected crossing, transition to POST_ALIGN_TURN");
                             break;
                         case TurnType::LEFT_FRONT:
@@ -359,6 +361,8 @@ private:
                 // Target reached within tolerance
                 if (std::abs(target_turn_angle_ - angle_turned) < angle_tolerance) {
                     current_state_ = RobotState::POST_ALIGN_TURN;
+                    align_start_x_ = current_x_;
+                    align_start_y_ = current_y_;
                     RCLCPP_INFO(node_->get_logger(), "Turn complete (%.2f rad), transitioning to POST_ALIGN_TURN", angle_turned);
                 } else {
                     // Calculate angular velocity using PID
@@ -380,6 +384,7 @@ private:
             }
             case RobotState::POST_ALIGN_TURN: {
                 if (has_moved_required_distance()) {
+                    end_of_corridor_detected_ = false;
                     current_state_ = RobotState::FOLLOWING_CORRIDOR;
                     
                     RCLCPP_INFO(node_->get_logger(), "Alignment complete, transitioning to FOLLOWING_CORRIDOR");
