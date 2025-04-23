@@ -149,7 +149,6 @@ private:
     lidar_turn_publisher_->publish(turn_msg);
     
     // Optionally log the detected turn
-    RCLCPP_INFO(node_->get_logger(), "Detected turn: %d (F: %g, L: %g, R: %g)", 
-                static_cast<int>(turn), front_avg, hard_left_avg, hard_right_avg);
+    //RCLCPP_INFO(node_->get_logger(), "Detected turn: %d (F: %g, L: %g, R: %g)", static_cast<int>(turn), front_avg, hard_left_avg, hard_right_avg);
   }
 };

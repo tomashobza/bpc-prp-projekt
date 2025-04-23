@@ -6,6 +6,7 @@
 #include <std_msgs/msg/u_int8.hpp>
 #include <geometry_msgs/msg/pose2_d.hpp>
 #include "algorithms/kinematics.hpp"
+#include "algorithms/turns.hpp"
 
 enum class RobotState {
     IDLE,
@@ -21,13 +22,17 @@ public:
           current_state_(RobotState::IDLE),
           end_of_corridor_detected_(false),
           last_button_pressed_(-1),
-          ALIGN_TO_CENTER_DISTANCE(0.1f) // 10 centimeters in meters
+          ALIGN_TO_CENTER_DISTANCE(0.3f) // 30 centimeters in meters
     {
         RCLCPP_INFO(node_->get_logger(), "Control node started!");
 
         lidar_subscriber_ = node_->create_subscription<std_msgs::msg::Float32MultiArray>(
             "/bpc_prp_robot/lidar_avg", 1,
             std::bind(&ControlNode::on_lidar_msg, this, std::placeholders::_1));
+            
+        turn_subscriber_ = node_->create_subscription<std_msgs::msg::Int8>(
+            "/bpc_prp_robot/detected_turn", 1,
+            std::bind(&ControlNode::on_turn_msg, this, std::placeholders::_1));
 
         buttons_subscriber_ = node_->create_subscription<std_msgs::msg::UInt8>(
             "/bpc_prp_robot/buttons", 1,
@@ -50,6 +55,9 @@ public:
 private:
     rclcpp::Node::SharedPtr node_;
     rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr lidar_subscriber_;
+
+    rclcpp::Subscription<std_msgs::msg::Int8>::SharedPtr turn_subscriber_;
+
     rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr buttons_subscriber_;
     rclcpp::Subscription<geometry_msgs::msg::Pose2D>::SharedPtr pose_subscriber_;
     rclcpp::Publisher<std_msgs::msg::UInt8MultiArray>::SharedPtr motors_publisher_;
@@ -86,6 +94,10 @@ private:
     const float corner_detection_threshold_{0.2f};
     const float speed_coefficient_{10.0f};
     const float base_linear_velocity_{0.02f};
+
+    void on_turn_msg(const std_msgs::msg::Int8::SharedPtr msg){
+        RCLCPP_INFO(node_->get_logger(), "TURN: %d", msg->data);
+    }
 
     void on_pose_msg(const geometry_msgs::msg::Pose2D::SharedPtr msg) {
         current_x_ = msg->x;
@@ -191,6 +203,7 @@ private:
             }
             case RobotState::ALIGN_TURN: {
                 if (has_moved_required_distance()) {
+                    // TODO: read the type of turn and proceed to turn that way
                     current_state_ = RobotState::IDLE;
                     RCLCPP_INFO(node_->get_logger(), "Alignment complete, transitioning to IDLE");
                 } else if (front_dist_ > 0.2f) {
