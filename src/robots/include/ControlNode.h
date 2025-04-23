@@ -3,9 +3,9 @@
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/float32_multi_array.hpp>
 #include <std_msgs/msg/u_int8_multi_array.hpp>
-#include <std_msgs/msg/u_int32_multi_array.hpp>
 #include <std_msgs/msg/u_int8.hpp>
-#include "algorithms/kinematics.hpp"  // Include the kinematics logic
+#include <geometry_msgs/msg/pose2_d.hpp>
+#include "algorithms/kinematics.hpp"
 
 enum class RobotState {
     IDLE,
@@ -17,36 +17,29 @@ class ControlNode {
 public:
     ControlNode(const rclcpp::Node::SharedPtr &node)
         : node_(node),
-          kinematics_(0.033, 0.16, 360),  // Same parameters as MotorNode
+          kinematics_(0.033, 0.16, 360),
           current_state_(RobotState::IDLE),
           end_of_corridor_detected_(false),
           last_button_pressed_(-1),
-          align_start_encoder_left_(0),
-          align_start_encoder_right_(0),
-          ALIGN_TO_CENTER_DISTANCE(20000) // This value needs tuning based on your encoder resolution
+          ALIGN_TO_CENTER_DISTANCE(0.1f) // 10 centimeters in meters
     {
         RCLCPP_INFO(node_->get_logger(), "Control node started!");
 
-        // Subscribe to averaged LIDAR data
         lidar_subscriber_ = node_->create_subscription<std_msgs::msg::Float32MultiArray>(
             "/bpc_prp_robot/lidar_avg", 1,
             std::bind(&ControlNode::on_lidar_msg, this, std::placeholders::_1));
 
-        // Subscribe to button inputs
         buttons_subscriber_ = node_->create_subscription<std_msgs::msg::UInt8>(
             "/bpc_prp_robot/buttons", 1,
             std::bind(&ControlNode::on_button_msg, this, std::placeholders::_1));
 
-        // Subscribe to encoder data
-        encoders_subscriber_ = node_->create_subscription<std_msgs::msg::UInt32MultiArray>(
-            "/bpc_prp_robot/encoders", 1,
-            std::bind(&ControlNode::on_encoder_msg, this, std::placeholders::_1));
+        pose_subscriber_ = node_->create_subscription<geometry_msgs::msg::Pose2D>(
+            "/robot_pose", 1,
+            std::bind(&ControlNode::on_pose_msg, this, std::placeholders::_1));
 
-        // Publisher for motor commands
         motors_publisher_ = node_->create_publisher<std_msgs::msg::UInt8MultiArray>(
             "/bpc_prp_robot/set_motor_speeds", 1);
 
-        // Create timer for state machine updates (50 Hz)
         timer_ = node_->create_wall_timer(
             std::chrono::milliseconds(20),
             std::bind(&ControlNode::state_machine_update, this));
@@ -55,28 +48,25 @@ public:
     }
 
 private:
-    // ROS node handle, publishers, subscribers, and timer
     rclcpp::Node::SharedPtr node_;
     rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr lidar_subscriber_;
     rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr buttons_subscriber_;
-    rclcpp::Subscription<std_msgs::msg::UInt32MultiArray>::SharedPtr encoders_subscriber_;
+    rclcpp::Subscription<geometry_msgs::msg::Pose2D>::SharedPtr pose_subscriber_;
     rclcpp::Publisher<std_msgs::msg::UInt8MultiArray>::SharedPtr motors_publisher_;
     rclcpp::TimerBase::SharedPtr timer_;
 
-    // Kinematics object for inverse kinematics calculations
     algorithms::Kinematics kinematics_;
-
-    // State machine variables
     RobotState current_state_;
     bool end_of_corridor_detected_;
     int last_button_pressed_;
 
-    // Encoder data storage
-    uint32_t current_encoder_left_{0};
-    uint32_t current_encoder_right_{0};
-    uint32_t align_start_encoder_left_;
-    uint32_t align_start_encoder_right_;
-    const uint32_t ALIGN_TO_CENTER_DISTANCE;
+    // Position tracking
+    double current_x_{0.0};
+    double current_y_{0.0};
+    double current_theta_{0.0};
+    double align_start_x_{0.0};
+    double align_start_y_{0.0};
+    const float ALIGN_TO_CENTER_DISTANCE;
 
     // LIDAR data storage
     float front_dist_{0.0f};
@@ -88,38 +78,28 @@ private:
     // PID Controller variables
     float previous_error_{0.0f};
     float integral_{0.0f};
-    const float kp_{1.0f};    // Proportional gain
-    const float ki_{0.05f};   // Integral gain
-    const float kd_{0.1f};    // Derivative gain
+    const float kp_{1.0f};
+    const float ki_{0.05f};
+    const float kd_{0.1f};
 
     // Constants
-    const float corner_detection_threshold_{0.2f};  // Same as in MotorNode
-    const float speed_coefficient_{10.0f};          // Same as in MotorNode
-    const float base_linear_velocity_{0.02f};       // Same as in MotorNode
+    const float corner_detection_threshold_{0.2f};
+    const float speed_coefficient_{10.0f};
+    const float base_linear_velocity_{0.02f};
 
-    void on_encoder_msg(const std_msgs::msg::UInt32MultiArray::SharedPtr msg) {
-        if (msg->data.size() >= 2) {
-            current_encoder_left_ = msg->data[0];
-            current_encoder_right_ = msg->data[1];
-        }
-    }
-
-    uint32_t calculate_encoder_diff(uint32_t current, uint32_t previous) {
-        // Handle overflow
-        if (current >= previous) {
-            return current - previous;
-        } else {
-            return (UINT32_MAX - previous) + current + 1;
-        }
+    void on_pose_msg(const geometry_msgs::msg::Pose2D::SharedPtr msg) {
+        current_x_ = msg->x;
+        current_y_ = msg->y;
+        current_theta_ = msg->theta;
     }
 
     bool has_moved_required_distance() {
-        uint32_t left_diff = calculate_encoder_diff(current_encoder_left_, align_start_encoder_left_);
-        uint32_t right_diff = calculate_encoder_diff(current_encoder_right_, align_start_encoder_right_);
+        double dx = current_x_ - align_start_x_;
+        double dy = current_y_ - align_start_y_;
+        double distance = std::sqrt(dx*dx + dy*dy);
         
-        // Use average of both encoders for more accurate distance measurement
-        uint32_t avg_diff = (left_diff + right_diff) / 2;
-        return avg_diff >= ALIGN_TO_CENTER_DISTANCE;
+        RCLCPP_INFO(node_->get_logger(), "Distance moved: %.3f m", distance);
+        return distance >= ALIGN_TO_CENTER_DISTANCE;
     }
 
     void on_button_msg(const std_msgs::msg::UInt8::SharedPtr msg) {
@@ -133,7 +113,6 @@ private:
             right_dist_ = msg->data[1];
             left_dist_ = msg->data[2];
 
-            // Check for end of corridor
             if (last_left_dist_ != -1) {
                 float dist_diff_left = std::fabs(left_dist_ - last_left_dist_);
                 float dist_diff_right = std::fabs(right_dist_ - last_right_dist_);
@@ -151,11 +130,10 @@ private:
     }
 
     float calculate_pid_angular_velocity() {
-        float corridor_offset = left_dist_ - right_dist_;  // Positive if closer to left wall
+        float corridor_offset = left_dist_ - right_dist_;
         
-        // PID calculations
         float error = corridor_offset;
-        integral_ += error * 0.02f;  // dt = 20ms = 0.02s
+        integral_ += error * 0.02f;
         float derivative = (error - previous_error_) / 0.02f;
         
         float output = kp_ * error + ki_ * integral_ + kd_ * derivative;
@@ -178,34 +156,25 @@ private:
             case RobotState::IDLE: {
                 if (last_button_pressed_ == 0) {
                     current_state_ = RobotState::FOLLOWING_CORRIDOR;
-                    last_button_pressed_ = -1;  // Reset button state
+                    last_button_pressed_ = -1;
                     RCLCPP_INFO(node_->get_logger(), "Transitioning from IDLE to FOLLOWING_CORRIDOR state");
                 }
                 break;
             }
             case RobotState::FOLLOWING_CORRIDOR: {
                 if (end_of_corridor_detected_) {
-                    // Transition to ALIGN_TURN state
                     current_state_ = RobotState::ALIGN_TURN;
-                    // Store starting encoder values for alignment
-                    align_start_encoder_left_ = current_encoder_left_;
-                    align_start_encoder_right_ = current_encoder_right_;
-                    end_of_corridor_detected_ = false;  // Reset the flag
+                    align_start_x_ = current_x_;
+                    align_start_y_ = current_y_;
+                    end_of_corridor_detected_ = false;
                     RCLCPP_INFO(node_->get_logger(), "Transitioning to ALIGN_TURN state");
-                } else if (front_dist_ > 0.2f) {  // Only move if no front obstacle
-                    // Calculate angular velocity using PID
+                } else if (front_dist_ > 0.2f) {
                     float angular_velocity = calculate_pid_angular_velocity();
-                    
-                    // Set linear velocity
                     float linear_velocity = base_linear_velocity_;
                     
-                    // Calculate robot speed
                     algorithms::RobotSpeed robot_speed(linear_velocity, angular_velocity);
-                    
-                    // Use inverse kinematics to compute wheel speeds
                     algorithms::WheelSpeed wheel_speeds = kinematics_.inverse(robot_speed);
                     
-                    // Convert wheel speeds to motor commands
                     motor_command.data = {
                         convert_speed_to_command(wheel_speeds.l),
                         convert_speed_to_command(wheel_speeds.r)
@@ -218,8 +187,7 @@ private:
                     current_state_ = RobotState::IDLE;
                     RCLCPP_INFO(node_->get_logger(), "Alignment complete, transitioning to IDLE");
                 } else if (front_dist_ > 0.2f) {
-                    // Move forward with equal speeds
-                    algorithms::RobotSpeed robot_speed(base_linear_velocity_, 0.0);  // No angular velocity
+                    algorithms::RobotSpeed robot_speed(base_linear_velocity_, 0.0);
                     algorithms::WheelSpeed wheel_speeds = kinematics_.inverse(robot_speed);
                     
                     motor_command.data = {
@@ -231,7 +199,6 @@ private:
             }
         }
 
-        // Publish motor commands
         motors_publisher_->publish(motor_command);
     }
 };
