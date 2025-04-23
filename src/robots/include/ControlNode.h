@@ -131,6 +131,10 @@ private:
                 // Yellow
                 led_msg.data = {128, 0, 128};
                 break;
+            case RobotState::ALIGN_TURN:
+                // Yellow
+                led_msg.data = {255, 255, 255};
+                break;
             case RobotState::EMERGENCY_STOP:
                 // Red
                 led_msg.data = {255, 0, 0};
@@ -221,7 +225,7 @@ private:
         }
 
         // Check for emergency stop condition in any state except EMERGENCY_STOP
-        if (current_state_ != RobotState::EMERGENCY_STOP && front_dist_ < emergency_stop_threshold_) {
+        if (current_state_ != RobotState::EMERGENCY_STOP && current_state_ != RobotState::TURN && front_dist_ < emergency_stop_threshold_) {
             RobotState previous_state = current_state_;
             current_state_ = RobotState::EMERGENCY_STOP;
             RCLCPP_WARN(node_->get_logger(), "EMERGENCY STOP: Obstacle too close (%.2f m)", front_dist_);
@@ -240,6 +244,11 @@ private:
                     align_start_y_ = current_y_;
                     last_button_pressed_ = -1;
                     RCLCPP_INFO(node_->get_logger(), "Transitioning from IDLE to ALIGN_TURN state");
+                } else if (last_button_pressed_ == 2) {
+                    current_state_ = RobotState::TURN;
+                    start_yaw_ = current_yaw_;
+                    last_button_pressed_ = -1;
+                    RCLCPP_INFO(node_->get_logger(), "Transitioning from IDLE to TURN state");
                 }
                 break;
             }
@@ -282,7 +291,28 @@ private:
                 break;
             }
             case RobotState::TURN: {
-                // TODO: tell me this part
+                float angle_turned = current_yaw_ - start_yaw_;
+                // Normalize angle to [-π, π]
+                while (angle_turned > M_PI) angle_turned -= 2*M_PI;
+                while (angle_turned < -M_PI) angle_turned += 2*M_PI;
+                
+                // Target is 90 degrees = π/2 radians
+                if (std::abs(angle_turned) >= M_PI/2.0f) {
+                    current_state_ = RobotState::IDLE;
+                    RCLCPP_INFO(node_->get_logger(), "Turn complete (%.2f rad), transitioning to IDLE", angle_turned);
+                } else {
+                    // Turn with constant angular velocity (positive = counter-clockwise)
+                    float angular_velocity = 0.5f;  // You might need to tune this value
+                    algorithms::RobotSpeed robot_speed(0.0f, angular_velocity);
+                    algorithms::WheelSpeed wheel_speeds = kinematics_.inverse(robot_speed);
+                    
+                    motor_command.data = {
+                        convert_speed_to_command(wheel_speeds.l),
+                        convert_speed_to_command(wheel_speeds.r)
+                    };
+                    
+                    RCLCPP_INFO(node_->get_logger(), "Current angle: %.2f rad", angle_turned);
+                }
                 break;
             }
             case RobotState::EMERGENCY_STOP: {
