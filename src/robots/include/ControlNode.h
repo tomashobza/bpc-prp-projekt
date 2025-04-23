@@ -76,6 +76,9 @@ private:
     rclcpp::Publisher<std_msgs::msg::UInt8MultiArray>::SharedPtr leds_publisher_;
     rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr integrated_yaw_subscriber_;
     rclcpp::TimerBase::SharedPtr timer_;
+
+    TurnType current_turn_type_{TurnType::RIGHT};  // Default value
+    float target_turn_angle_{0.0f};
     
     algorithms::Kinematics kinematics_;
     RobotState current_state_;
@@ -85,6 +88,13 @@ private:
     // Rotation tracking
     float current_yaw_{0.0f};
     float start_yaw_{0.0f};
+
+    // Turn PID Controller variables
+    float turn_previous_error_{0.0f};
+    float turn_integral_{0.0f};
+    const float turn_kp_{2.0f};    // Tune these values
+    const float turn_ki_{0.1f};
+    const float turn_kd_{0.2f};
 
     // Position tracking
     double current_x_{0.0};
@@ -145,7 +155,8 @@ private:
     }
 
     void on_turn_msg(const std_msgs::msg::Int8::SharedPtr msg) {
-        // RCLCPP_INFO(node_->get_logger(), "TURN: %d", msg->data);
+        current_turn_type_ = static_cast<TurnType>(msg->data);
+        RCLCPP_INFO(node_->get_logger(), "Turn type received: %d", msg->data);
     }
 
     void on_pose_msg(const geometry_msgs::msg::Pose2D::SharedPtr msg) {
@@ -204,6 +215,25 @@ private:
         float output = kp_ * error + ki_ * integral_ + kd_ * derivative;
         
         previous_error_ = error;
+        return output;
+    }
+
+    float calculate_turn_pid_angular_velocity(float target_angle) {
+        float angle_error = target_angle - (current_yaw_ - start_yaw_);
+        
+        // Normalize error to [-π, π]
+        while (angle_error > M_PI) angle_error -= 2*M_PI;
+        while (angle_error < -M_PI) angle_error += 2*M_PI;
+        
+        // PID calculations
+        turn_integral_ += angle_error * 0.02f;  // dt = 20ms
+        float derivative = (angle_error - turn_previous_error_) / 0.02f;
+        
+        float output = turn_kp_ * angle_error + 
+                      turn_ki_ * turn_integral_ + 
+                      turn_kd_ * derivative;
+        
+        turn_previous_error_ = angle_error;
         return output;
     }
 
@@ -275,9 +305,29 @@ private:
             }
             case RobotState::ALIGN_TURN: {
                 if (has_moved_required_distance()) {
-                    // TODO: read the type of turn and proceed to turn that way
                     current_state_ = RobotState::TURN;
                     start_yaw_ = current_yaw_;
+                    
+                    // Determine turn angle based on turn type
+                    switch (current_turn_type_) {
+                        case TurnType::LEFT:
+                            target_turn_angle_ = M_PI/2.0f;  // 90 degrees CCW
+                            RCLCPP_INFO(node_->get_logger(), "Starting left turn");
+                            break;
+                        case TurnType::RIGHT:
+                            target_turn_angle_ = -M_PI/2.0f;  // 90 degrees CW
+                            RCLCPP_INFO(node_->get_logger(), "Starting right turn");
+                            break;
+                        case TurnType::CROSS:
+                        case TurnType::LEFT_FRONT:
+                        case TurnType::RIGHT_FRONT:
+                        case TurnType::T_TURN:
+                            // TODO: figure this out later with the aruco markers
+                            target_turn_angle_ = 0.0f;  // Go straight
+                            RCLCPP_INFO(node_->get_logger(), "Going straight through intersection");
+                            break;
+                    }
+                    
                     RCLCPP_INFO(node_->get_logger(), "Alignment complete, transitioning to TURN");
                 } else if (front_dist_ > emergency_stop_threshold_) {
                     algorithms::RobotSpeed robot_speed(base_linear_velocity_, 0.0);
@@ -296,22 +346,28 @@ private:
                 while (angle_turned > M_PI) angle_turned -= 2*M_PI;
                 while (angle_turned < -M_PI) angle_turned += 2*M_PI;
                 
-                // Target is 90 degrees = π/2 radians
-                if (std::abs(angle_turned) >= M_PI/2.0f) {
+                // For going straight (target_angle = 0), use a smaller tolerance
+                float angle_tolerance = (target_turn_angle_ == 0.0f) ? 0.02f : 0.05f;
+                
+                // Target reached within tolerance
+                if (std::abs(target_turn_angle_ - angle_turned) < angle_tolerance) {
                     current_state_ = RobotState::IDLE;
                     RCLCPP_INFO(node_->get_logger(), "Turn complete (%.2f rad), transitioning to IDLE", angle_turned);
                 } else {
-                    // Turn with constant angular velocity (positive = counter-clockwise)
-                    float angular_velocity = 0.5f;  // You might need to tune this value
-                    algorithms::RobotSpeed robot_speed(0.0f, angular_velocity);
+                    // Calculate angular velocity using PID
+                    float angular_velocity = calculate_turn_pid_angular_velocity(target_turn_angle_);
+                    
+                    // If going straight, add forward velocity
+                    float linear_velocity = (target_turn_angle_ == 0.0f) ? base_linear_velocity_ : 0.0f;
+                    
+                    // Create robot speed command
+                    algorithms::RobotSpeed robot_speed(linear_velocity, angular_velocity);
                     algorithms::WheelSpeed wheel_speeds = kinematics_.inverse(robot_speed);
                     
                     motor_command.data = {
                         convert_speed_to_command(wheel_speeds.l),
                         convert_speed_to_command(wheel_speeds.r)
                     };
-                    
-                    RCLCPP_INFO(node_->get_logger(), "Current angle: %.2f rad", angle_turned);
                 }
                 break;
             }
