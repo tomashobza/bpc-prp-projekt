@@ -80,9 +80,11 @@ private:
         float dist_diff_right = std::fabs(right_dist - last_right_dist);
         if (dist_diff_left > 0.2) {
           RCLCPP_INFO(node_->get_logger(), "ZATACKA VLEVO");
+          movement_enabled_ = false;
         }
         if (dist_diff_right > 0.2) {
           RCLCPP_INFO(node_->get_logger(), "ZATACKA VPRAVO");
+          movement_enabled_ = false;
         }
       }
 
