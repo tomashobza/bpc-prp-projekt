@@ -131,7 +131,7 @@ private:
                 // Yellow
                 led_msg.data = {128, 0, 128};
                 break;
-            case RobotState::ALIGN_TURN:
+            case RobotState::TURN:
                 // Yellow
                 led_msg.data = {255, 255, 255};
                 break;
