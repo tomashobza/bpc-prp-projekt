@@ -104,7 +104,6 @@ private:
     double current_theta_{0.0};
     double align_start_x_{0.0};
     double align_start_y_{0.0};
-    const float ALIGN_TO_CENTER_DISTANCE;
 
     // LIDAR data storage
     float front_dist_{-1.0f};
@@ -123,15 +122,19 @@ private:
     // PID Controller variables for straight-line maintenance
     float straight_previous_error_{0.0f};
     float straight_integral_{0.0f};
-    const float straight_kp_{0.5f};    // Lower P gain to reduce oscillations
-    const float straight_ki_{0.02f};   // Lower I gain for gentler correction
-    const float straight_kd_{0.1f};    // Similar D gain for damping
+    const float straight_kp_{0.2f};    // Much lower P gain for very gentle corrections
+    const float straight_ki_{0.005f};  // Very small I gain to prevent oscillation buildup
+    const float straight_kd_{0.15f};   // Slightly higher D gain for better damping
 
     // Constants
     const float corner_detection_threshold_{0.3f};
     const float speed_coefficient_{10.0f};
     const float base_linear_velocity_{0.04f};
     const float emergency_stop_threshold_{0.15f};
+
+    const float ALIGN_TO_CENTER_DISTANCE = 0.25f;      // For initial alignment and crossroads
+    const float POST_ALIGN_SHORT_DISTANCE = 0.15f;   // Shorter distance for post-turn alignment
+    bool is_crossroad_{false};                       // Track if we're handling a crossroad
 
     void update_led_color(RobotState state) {
         std_msgs::msg::UInt8MultiArray led_msg;
@@ -182,8 +185,21 @@ private:
         double dy = current_y_ - align_start_y_;
         double distance = std::sqrt(dx*dx + dy*dy);
         
-        // RCLCPP_INFO(node_->get_logger(), "Distance moved: %.3f m", distance);
-        return distance >= ALIGN_TO_CENTER_DISTANCE;
+        // Use different distances based on state and situation
+        float required_distance = ALIGN_TO_CENTER_DISTANCE;
+        if (current_state_ == RobotState::POST_ALIGN_TURN && !is_crossroad_) {
+            required_distance = POST_ALIGN_SHORT_DISTANCE;
+        }
+        
+        return distance >= required_distance;
+    }
+
+    bool is_yaw_aligned() {
+        float yaw_diff = current_yaw_ - start_yaw_;
+        while (yaw_diff > M_PI) yaw_diff -= 2*M_PI;
+        while (yaw_diff < -M_PI) yaw_diff += 2*M_PI;
+        
+        return std::abs(yaw_diff) < 0.1f;  // About 5.5 degrees tolerance
     }
 
     void on_button_msg(const std_msgs::msg::UInt8::SharedPtr msg) {
@@ -355,35 +371,34 @@ private:
                 break;
             }
             case RobotState::ALIGN_TURN: {
-                if (has_moved_required_distance()) {
+                if (has_moved_required_distance() && is_yaw_aligned()) {
                     current_state_ = RobotState::TURN;
                     start_yaw_ = current_yaw_;
                     
                     // Determine turn angle based on turn type
                     switch (current_turn_type_) {
                         case TurnType::LEFT:
-                            target_turn_angle_ = M_PI/2.0f;  // 90 degrees CCW
+                            target_turn_angle_ = M_PI/2.0f;
+                            is_crossroad_ = false;
                             RCLCPP_INFO(node_->get_logger(), "Starting left turn");
                             break;
                         case TurnType::RIGHT:
-                            target_turn_angle_ = -M_PI/2.0f;  // 90 degrees CW
+                            target_turn_angle_ = -M_PI/2.0f;
+                            is_crossroad_ = false;
                             RCLCPP_INFO(node_->get_logger(), "Starting right turn");
                             break;
                         case TurnType::CROSS:
                             current_state_ = RobotState::POST_ALIGN_TURN;
                             align_start_x_ = current_x_;
                             align_start_y_ = current_y_;
-                            // start_yaw_ = current_yaw_;  // Store new yaw reference
-                            // // Reset straight-line PID values for new segment
-                            // straight_integral_ = 0.0f;
-                            // straight_previous_error_ = 0.0f;
+                            is_crossroad_ = true;
                             RCLCPP_INFO(node_->get_logger(), "Detected crossing, transition to POST_ALIGN_TURN");
                             break;
                         case TurnType::LEFT_FRONT:
                         case TurnType::RIGHT_FRONT:
                         case TurnType::T_TURN:
-                            // TODO: figure this out later with the aruco markers
-                            target_turn_angle_ = 0.0f;  // Go straight
+                            target_turn_angle_ = 0.0f;
+                            is_crossroad_ = false;
                             RCLCPP_INFO(node_->get_logger(), "Going straight through intersection");
                             break;
                     }
@@ -450,9 +465,10 @@ private:
                 break;
             }
             case RobotState::POST_ALIGN_TURN: {
-                if (has_moved_required_distance()) {
+                if (has_moved_required_distance() && is_yaw_aligned()) {
                     end_of_corridor_detected_ = false;
                     current_state_ = RobotState::FOLLOWING_CORRIDOR;
+                    is_crossroad_ = false;  // Reset crossroad flag
                     // Reset corridor PID for new corridor
                     integral_ = 0.0f;
                     previous_error_ = 0.0f;
