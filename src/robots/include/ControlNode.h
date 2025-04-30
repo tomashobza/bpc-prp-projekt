@@ -93,9 +93,10 @@ private:
     // Turn PID Controller variables
     float turn_previous_error_{0.0f};
     float turn_integral_{0.0f};
-    const float turn_kp_{1.0f};    // Tune these values
-    const float turn_ki_{0.05f};
-    const float turn_kd_{0.1f};
+    const float turn_kp_{2.0f};    // Tune these values
+    const float turn_ki_{0.1f};
+    const float turn_kd_{0.2f};
+    
 
     // Position tracking
     double current_x_{0.0};
@@ -118,6 +119,13 @@ private:
     const float kp_{1.5f};
     const float ki_{0.08f};
     const float kd_{0.15f};
+
+    // PID Controller variables for straight-line maintenance
+    float straight_previous_error_{0.0f};
+    float straight_integral_{0.0f};
+    const float straight_kp_{0.5f};    // Lower P gain to reduce oscillations
+    const float straight_ki_{0.02f};   // Lower I gain for gentler correction
+    const float straight_kd_{0.1f};    // Similar D gain for damping
 
     // Constants
     const float corner_detection_threshold_{0.3f};
@@ -222,6 +230,26 @@ private:
         return output;
     }
 
+    float calculate_straight_pid_angular_velocity() {
+        // Calculate yaw difference
+        float yaw_diff = current_yaw_ - start_yaw_;
+        // Normalize to [-π, π]
+        while (yaw_diff > M_PI) yaw_diff -= 2*M_PI;
+        while (yaw_diff < -M_PI) yaw_diff += 2*M_PI;
+        
+        // Use yaw difference as error
+        float error = yaw_diff;
+        straight_integral_ += error * 0.02f;
+        float derivative = (error - straight_previous_error_) / 0.02f;
+        
+        float output = straight_kp_ * error + 
+                      straight_ki_ * straight_integral_ + 
+                      straight_kd_ * derivative;
+        
+        straight_previous_error_ = error;
+        return -output;  // Negative because positive yaw diff needs negative angular velocity to correct
+    }
+
     float calculate_turn_pid_angular_velocity(float target_angle) {
         float angle_error = target_angle - (current_yaw_ - start_yaw_);
         
@@ -306,7 +334,11 @@ private:
                     current_state_ = RobotState::ALIGN_TURN;
                     align_start_x_ = current_x_;
                     align_start_y_ = current_y_;
+                    start_yaw_ = current_yaw_;  // Store yaw for reference
                     end_of_corridor_detected_ = false;
+                    // Reset straight-line PID values for new segment
+                    straight_integral_ = 0.0f;
+                    straight_previous_error_ = 0.0f;
                     RCLCPP_INFO(node_->get_logger(), "Transitioning to ALIGN_TURN state");
                 } else if (front_dist_ > emergency_stop_threshold_) {
                     float angular_velocity = calculate_pid_angular_velocity();
@@ -341,6 +373,10 @@ private:
                             current_state_ = RobotState::POST_ALIGN_TURN;
                             align_start_x_ = current_x_;
                             align_start_y_ = current_y_;
+                            // start_yaw_ = current_yaw_;  // Store new yaw reference
+                            // // Reset straight-line PID values for new segment
+                            // straight_integral_ = 0.0f;
+                            // straight_previous_error_ = 0.0f;
                             RCLCPP_INFO(node_->get_logger(), "Detected crossing, transition to POST_ALIGN_TURN");
                             break;
                         case TurnType::LEFT_FRONT:
@@ -354,13 +390,26 @@ private:
                     
                     RCLCPP_INFO(node_->get_logger(), "Alignment complete, transitioning to TURN");
                 } else if (front_dist_ > emergency_stop_threshold_) {
-                    algorithms::RobotSpeed robot_speed(base_linear_velocity_, 0.0);
+                    // Use corridor PID for alignment
+                    float angular_velocity = calculate_straight_pid_angular_velocity();
+                    float linear_velocity = base_linear_velocity_;
+                    
+                    algorithms::RobotSpeed robot_speed(linear_velocity, angular_velocity);
                     algorithms::WheelSpeed wheel_speeds = kinematics_.inverse(robot_speed);
                     
                     motor_command.data = {
                         convert_speed_to_command(wheel_speeds.l),
                         convert_speed_to_command(wheel_speeds.r)
                     };
+
+                    // Check if we've drifted too much from our initial heading
+                    // float yaw_diff = current_yaw_ - start_yaw_;
+                    // while (yaw_diff > M_PI) yaw_diff -= 2*M_PI;
+                    // while (yaw_diff < -M_PI) yaw_diff += 2*M_PI;
+                    
+                    // if (std::abs(yaw_diff) > M_PI/4) {  // If we've drifted more than 45 degrees
+                    //     RCLCPP_WARN(node_->get_logger(), "Large yaw drift detected in ALIGN_TURN: %.2f rad", yaw_diff);
+                    // }
                 }
                 break;
             }
@@ -370,14 +419,17 @@ private:
                 while (angle_turned > M_PI) angle_turned -= 2*M_PI;
                 while (angle_turned < -M_PI) angle_turned += 2*M_PI;
                 
-                // For going straight (target_angle = 0), use a smaller tolerance
-                float angle_tolerance = (target_turn_angle_ == 0.0f) ? 0.02f : 0.05f;
+                float angle_tolerance = 0.07f;
                 
                 // Target reached within tolerance
                 if (std::abs(target_turn_angle_ - angle_turned) < angle_tolerance) {
                     current_state_ = RobotState::POST_ALIGN_TURN;
                     align_start_x_ = current_x_;
                     align_start_y_ = current_y_;
+                    start_yaw_ = current_yaw_;  // Store new yaw reference
+                    // Reset straight-line PID values for new segment
+                    straight_integral_ = 0.0f;
+                    straight_previous_error_ = 0.0f;
                     RCLCPP_INFO(node_->get_logger(), "Turn complete (%.2f rad), transitioning to POST_ALIGN_TURN", angle_turned);
                 } else {
                     // Calculate angular velocity using PID
@@ -401,16 +453,31 @@ private:
                 if (has_moved_required_distance()) {
                     end_of_corridor_detected_ = false;
                     current_state_ = RobotState::FOLLOWING_CORRIDOR;
-                    
+                    // Reset corridor PID for new corridor
+                    integral_ = 0.0f;
+                    previous_error_ = 0.0f;
                     RCLCPP_INFO(node_->get_logger(), "Alignment complete, transitioning to FOLLOWING_CORRIDOR");
                 } else if (front_dist_ > emergency_stop_threshold_) {
-                    algorithms::RobotSpeed robot_speed(base_linear_velocity_, 0.0);
+                    // Use corridor PID for alignment
+                    float angular_velocity = calculate_straight_pid_angular_velocity();
+                    float linear_velocity = base_linear_velocity_;
+                    
+                    algorithms::RobotSpeed robot_speed(linear_velocity, angular_velocity);
                     algorithms::WheelSpeed wheel_speeds = kinematics_.inverse(robot_speed);
                     
                     motor_command.data = {
                         convert_speed_to_command(wheel_speeds.l),
                         convert_speed_to_command(wheel_speeds.r)
                     };
+
+                    // Check if we've drifted too much from our initial heading
+                    // float yaw_diff = current_yaw_ - start_yaw_;
+                    // while (yaw_diff > M_PI) yaw_diff -= 2*M_PI;
+                    // while (yaw_diff < -M_PI) yaw_diff += 2*M_PI;
+                    
+                    // if (std::abs(yaw_diff) > M_PI/4) {  // If we've drifted more than 45 degrees
+                    //     RCLCPP_WARN(node_->get_logger(), "Large yaw drift detected in POST_ALIGN_TURN: %.2f rad", yaw_diff);
+                    // }
                 }
                 break;
             }
