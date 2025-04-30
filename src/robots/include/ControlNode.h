@@ -93,9 +93,9 @@ private:
     // Turn PID Controller variables
     float turn_previous_error_{0.0f};
     float turn_integral_{0.0f};
-    const float turn_kp_{2.0f};    // Tune these values
-    const float turn_ki_{0.1f};
-    const float turn_kd_{0.2f};
+    const float turn_kp_{1.0f};    // Tune these values
+    const float turn_ki_{0.05f};
+    const float turn_kd_{0.1f};
 
     // Position tracking
     double current_x_{0.0};
@@ -115,14 +115,14 @@ private:
     // PID Controller variables
     float previous_error_{0.0f};
     float integral_{0.0f};
-    const float kp_{1.0f};
-    const float ki_{0.05f};
-    const float kd_{0.1f};
+    const float kp_{1.5f};
+    const float ki_{0.08f};
+    const float kd_{0.15f};
 
     // Constants
     const float corner_detection_threshold_{0.3f};
     const float speed_coefficient_{10.0f};
-    const float base_linear_velocity_{0.02f};
+    const float base_linear_velocity_{0.04f};
     const float emergency_stop_threshold_{0.15f};
 
     void update_led_color(RobotState state) {
@@ -252,6 +252,21 @@ private:
         motor_command.data = {127, 127};  // Default to stopped
 
         update_led_color(current_state_);
+
+        // Check if button 1 was pressed - reset to IDLE from any state
+        if (last_button_pressed_ == 1) {
+            current_state_ = RobotState::IDLE;
+            end_of_corridor_detected_ = false;  // Reset corridor detection
+            last_button_pressed_ = -1;  // Reset button press
+            // Reset PID controllers
+            integral_ = 0.0f;
+            turn_integral_ = 0.0f;
+            previous_error_ = 0.0f;
+            turn_previous_error_ = 0.0f;
+            RCLCPP_INFO(node_->get_logger(), "Button 1 pressed: Resetting to IDLE state");
+            motors_publisher_->publish(motor_command);  // Stop motors
+            return;  // Exit early after reset
+        }
 
         if (front_dist_ == -1 || right_dist_ == -1 || left_dist_ == -1) {
             RCLCPP_INFO(node_->get_logger(), "Waiting for lidar data");
