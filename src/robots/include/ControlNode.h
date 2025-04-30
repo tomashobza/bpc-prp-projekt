@@ -116,7 +116,7 @@ private:
     float previous_error_{0.0f};
     float integral_{0.0f};
     const float kp_{1.5f};
-    const float ki_{0.08f};
+    const float ki_{0.0f};
     const float kd_{0.15f};
 
     // PID Controller variables for straight-line maintenance
@@ -124,7 +124,8 @@ private:
     float straight_integral_{0.0f};
     const float straight_kp_{0.05f};    // Even more conservative
     const float straight_ki_{0.0f};     // Remove integral term completely
-    const float straight_kd_{0.2f};     // Keep damping
+    const float straight_kd_{0.05f};     // Keep damping
+    const float max_straight_correction_{0.2f};  // Limit maximum correction
 
     // Constants
     const float corner_detection_threshold_{0.3f};
@@ -220,6 +221,8 @@ private:
                 if (dist_diff_left > corner_detection_threshold_ || 
                     dist_diff_right > corner_detection_threshold_) {
                     end_of_corridor_detected_ = true;
+                    left_dist_ = last_left_dist_;
+                    right_dist_ = last_right_dist_;
                     RCLCPP_INFO(node_->get_logger(), "End of corridor detected!");
                 }
             }
@@ -234,7 +237,18 @@ private:
     }
 
     float calculate_pid_angular_velocity() {
-        float corridor_offset = left_dist_ - right_dist_;
+        // Filter out small differences in raw measurements
+        float left = left_dist_;
+        float right = right_dist_;
+        const float distance_deadband = 0.02f;  // 2cm deadband for raw distances
+        
+        if (std::abs(left - right) < distance_deadband) {
+            // If difference is smaller than deadband, consider them equal
+            left = (left + right) / 2.0f;
+            right = left;
+        }
+        
+        float corridor_offset = left - right;
         
         float error = corridor_offset;
         integral_ += error * 0.02f;
@@ -255,15 +269,22 @@ private:
         
         // Apply deadband to ignore tiny errors
         if (std::abs(yaw_diff) < 0.015f) {  // Ignore errors less than ~0.86 degrees
+            straight_previous_error_ = 0.0f;  // Reset derivative term when in deadband
             return 0.0f;
         }
         
         // Use yaw difference as error
         float error = yaw_diff;
-        // No integral term to prevent accumulated errors
+        
+        // Calculate derivative with low-pass filter
         float derivative = (error - straight_previous_error_) / 0.02f;
+        // Simple low-pass filter on derivative term
+        derivative = 0.7f * derivative;  // Dampen the derivative response
         
         float output = straight_kp_ * error + straight_kd_ * derivative;
+        
+        // Limit maximum correction
+        output = std::min(std::max(-max_straight_correction_, output), max_straight_correction_);
         
         straight_previous_error_ = error;
         return -output;  // Negative because positive yaw diff needs negative angular velocity to correct
@@ -351,14 +372,13 @@ private:
             case RobotState::FOLLOWING_CORRIDOR: {
                 if (end_of_corridor_detected_) {
                     // First stop the robot briefly to ensure stable yaw reading
-                    motor_command.data = {127, 127};
-                    motors_publisher_->publish(motor_command);
+                    // motor_command.data = {127, 127};
+                    // motors_publisher_->publish(motor_command);
                     
                     // Store current position and yaw
                     align_start_x_ = current_x_;
                     align_start_y_ = current_y_;
                     start_yaw_ = current_yaw_;
-                    end_of_corridor_detected_ = false;
                     
                     // Reset all PID variables for straight line control
                     straight_integral_ = 0.0f;
