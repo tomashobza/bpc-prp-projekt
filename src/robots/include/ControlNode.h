@@ -122,9 +122,9 @@ private:
     // PID Controller variables for straight-line maintenance
     float straight_previous_error_{0.0f};
     float straight_integral_{0.0f};
-    const float straight_kp_{0.2f};    // Much lower P gain for very gentle corrections
-    const float straight_ki_{0.005f};  // Very small I gain to prevent oscillation buildup
-    const float straight_kd_{0.15f};   // Slightly higher D gain for better damping
+    const float straight_kp_{0.05f};    // Even more conservative
+    const float straight_ki_{0.0f};     // Remove integral term completely
+    const float straight_kd_{0.2f};     // Keep damping
 
     // Constants
     const float corner_detection_threshold_{0.3f};
@@ -253,14 +253,17 @@ private:
         while (yaw_diff > M_PI) yaw_diff -= 2*M_PI;
         while (yaw_diff < -M_PI) yaw_diff += 2*M_PI;
         
+        // Apply deadband to ignore tiny errors
+        if (std::abs(yaw_diff) < 0.015f) {  // Ignore errors less than ~0.86 degrees
+            return 0.0f;
+        }
+        
         // Use yaw difference as error
         float error = yaw_diff;
-        straight_integral_ += error * 0.02f;
+        // No integral term to prevent accumulated errors
         float derivative = (error - straight_previous_error_) / 0.02f;
         
-        float output = straight_kp_ * error + 
-                      straight_ki_ * straight_integral_ + 
-                      straight_kd_ * derivative;
+        float output = straight_kp_ * error + straight_kd_ * derivative;
         
         straight_previous_error_ = error;
         return -output;  // Negative because positive yaw diff needs negative angular velocity to correct
@@ -347,15 +350,25 @@ private:
             }
             case RobotState::FOLLOWING_CORRIDOR: {
                 if (end_of_corridor_detected_) {
-                    current_state_ = RobotState::ALIGN_TURN;
+                    // First stop the robot briefly to ensure stable yaw reading
+                    motor_command.data = {127, 127};
+                    motors_publisher_->publish(motor_command);
+                    
+                    // Store current position and yaw
                     align_start_x_ = current_x_;
                     align_start_y_ = current_y_;
-                    start_yaw_ = current_yaw_;  // Store yaw for reference
+                    start_yaw_ = current_yaw_;
                     end_of_corridor_detected_ = false;
-                    // Reset straight-line PID values for new segment
+                    
+                    // Reset all PID variables for straight line control
                     straight_integral_ = 0.0f;
                     straight_previous_error_ = 0.0f;
-                    RCLCPP_INFO(node_->get_logger(), "Transitioning to ALIGN_TURN state");
+                    
+                    // Reset flags and change state
+                    end_of_corridor_detected_ = false;
+                    current_state_ = RobotState::ALIGN_TURN;
+                    
+                    RCLCPP_INFO(node_->get_logger(), "Transitioning to ALIGN_TURN state. Initial yaw: %.3f", start_yaw_);
                 } else if (front_dist_ > emergency_stop_threshold_) {
                     float angular_velocity = calculate_pid_angular_velocity();
                     float linear_velocity = base_linear_velocity_;
@@ -373,7 +386,9 @@ private:
             case RobotState::ALIGN_TURN: {
                 if (has_moved_required_distance() && is_yaw_aligned()) {
                     current_state_ = RobotState::TURN;
-                    start_yaw_ = current_yaw_;
+                    start_yaw_ = current_yaw_;  // Fresh yaw reference for turn
+                    turn_integral_ = 0.0f;      // Reset turn PID
+                    turn_previous_error_ = 0.0f;
                     
                     // Determine turn angle based on turn type
                     switch (current_turn_type_) {
@@ -441,11 +456,10 @@ private:
                     current_state_ = RobotState::POST_ALIGN_TURN;
                     align_start_x_ = current_x_;
                     align_start_y_ = current_y_;
-                    start_yaw_ = current_yaw_;  // Store new yaw reference
-                    // Reset straight-line PID values for new segment
+                    start_yaw_ = current_yaw_;  // Fresh yaw reference for post-align
                     straight_integral_ = 0.0f;
                     straight_previous_error_ = 0.0f;
-                    RCLCPP_INFO(node_->get_logger(), "Turn complete (%.2f rad), transitioning to POST_ALIGN_TURN", angle_turned);
+                    RCLCPP_INFO(node_->get_logger(), "Turn complete, transitioning to POST_ALIGN_TURN");
                 } else {
                     // Calculate angular velocity using PID
                     float angular_velocity = calculate_turn_pid_angular_velocity(target_turn_angle_);
