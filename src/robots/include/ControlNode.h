@@ -465,15 +465,14 @@ private:
                 break;
             }
             case RobotState::ALIGN_TURN: {
-                if (has_moved_required_distance() && is_yaw_aligned()) {
+                if (has_moved_required_distance()) {
                     handle_turn_transition();
-                    
                     RCLCPP_INFO(node_->get_logger(), "Alignment complete, transitioning to TURN");
                 } else if (front_dist_ < emergency_stop_threshold_) {
                     handle_turn_transition();
                 } else {
-                    // Use corridor PID for alignment
-                    float angular_velocity = calculate_straight_pid_angular_velocity();
+                    // Use corridor wall-following PID instead of straight line PID
+                    float angular_velocity = calculate_pid_angular_velocity();
                     float linear_velocity = base_linear_velocity_;
                     
                     algorithms::RobotSpeed robot_speed(linear_velocity, angular_velocity);
@@ -483,15 +482,6 @@ private:
                         convert_speed_to_command(wheel_speeds.l),
                         convert_speed_to_command(wheel_speeds.r)
                     };
-
-                    // Check if we've drifted too much from our initial heading
-                    // float yaw_diff = current_yaw_ - start_yaw_;
-                    // while (yaw_diff > M_PI) yaw_diff -= 2*M_PI;
-                    // while (yaw_diff < -M_PI) yaw_diff += 2*M_PI;
-                    
-                    // if (std::abs(yaw_diff) > M_PI/4) {  // If we've drifted more than 45 degrees
-                    //     RCLCPP_WARN(node_->get_logger(), "Large yaw drift detected in ALIGN_TURN: %.2f rad", yaw_diff);
-                    // }
                 }
                 break;
             }
@@ -531,7 +521,7 @@ private:
                 break;
             }
             case RobotState::POST_ALIGN_TURN: {
-                if (has_moved_required_distance() && is_yaw_aligned()) {
+                if (has_moved_required_distance()) {
                     end_of_corridor_detected_ = false;
                     current_state_ = RobotState::FOLLOWING_CORRIDOR;
                     is_crossroad_ = false;  // Reset crossroad flag
@@ -542,8 +532,8 @@ private:
                 } else if (front_dist_ < emergency_stop_threshold_) {
                     handle_turn_transition();
                 } else {
-                    // Use corridor PID for alignment
-                    float angular_velocity = calculate_straight_pid_angular_velocity();
+                    // Use corridor wall-following PID instead of straight line PID
+                    float angular_velocity = calculate_pid_angular_velocity();
                     float linear_velocity = base_linear_velocity_;
                     
                     algorithms::RobotSpeed robot_speed(linear_velocity, angular_velocity);
@@ -553,15 +543,6 @@ private:
                         convert_speed_to_command(wheel_speeds.l),
                         convert_speed_to_command(wheel_speeds.r)
                     };
-
-                    // Check if we've drifted too much from our initial heading
-                    // float yaw_diff = current_yaw_ - start_yaw_;
-                    // while (yaw_diff > M_PI) yaw_diff -= 2*M_PI;
-                    // while (yaw_diff < -M_PI) yaw_diff += 2*M_PI;
-                    
-                    // if (std::abs(yaw_diff) > M_PI/4) {  // If we've drifted more than 45 degrees
-                    //     RCLCPP_WARN(node_->get_logger(), "Large yaw drift detected in POST_ALIGN_TURN: %.2f rad", yaw_diff);
-                    // }
                 }
                 break;
             }
