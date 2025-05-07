@@ -7,6 +7,7 @@ find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(OpenCV REQUIRED)
 
 # Specify C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -35,11 +36,16 @@ ament_target_dependencies(my_program
   sensor_msgs
 )
 
+target_link_libraries(my_program
+  ${OpenCV_LIBS}
+)
+
 # Install targets
 install(TARGETS
   my_program
   DESTINATION lib/${PROJECT_NAME}
 )
+
 
 # Finalize ament package
 ament_package()

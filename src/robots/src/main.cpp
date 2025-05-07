@@ -6,6 +6,7 @@
 #include "LidarNode.h"
 #include "ControlNode.h"
 #include "ImuNode.h"
+#include "CameraNode.h"
 
 int main(int argc, char *argv[])
 {
@@ -29,15 +30,17 @@ int main(int argc, char *argv[])
     auto control_node = std::make_shared<ControlNode>(_control_node);
     auto imu_node = std::make_shared<ImuNode>();
 
+    auto camera_node = std::make_shared<CameraNode>();
+
     // Add nodes to the executor
     
-    executor->add_node(_encoder_node);
+    //executor->add_node(_encoder_node);
     // executor->add_node(_motor_node);
     // executor->add_node(_line_node);
-    executor->add_node(_lidar_node);
-    executor->add_node(_control_node);
-    executor->add_node(imu_node); 
-
+    //executor->add_node(_lidar_node);
+    //executor->add_node(_control_node);
+    //executor->add_node(imu_node); 
+    executor->add_node(camera_node);
     // Run the executor (handles callbacks for both nodes)
     executor->spin();
 
