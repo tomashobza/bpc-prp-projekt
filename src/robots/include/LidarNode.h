@@ -90,25 +90,29 @@ private:
     bool is_front_open = front > k_open_threshold;
     bool is_left_open = left > k_open_threshold;
     bool is_right_open = right > k_open_threshold;
-    
+
+    // Check for blind turn first (all directions closed)
+    if (!is_front_open && !is_left_open && !is_right_open) {
+        return TurnType::BLIND_TURN;  // New enum value for when all directions are closed
+    }
+
     // Decision tree for all possible turn types
     if (is_left_open && is_right_open && is_front_open) {
-      return TurnType::CROSS;  // All directions open = crossroad
+        return TurnType::CROSS;  // All directions open = crossroad
     } else if (is_left_open && is_right_open && !is_front_open) {
-      return TurnType::T_TURN;  // Left and right open, front closed = T junction
+        return TurnType::T_TURN;  // Left and right open, front closed = T junction
     } else if (is_left_open && is_front_open && !is_right_open) {
-      return TurnType::LEFT_FRONT;  // Left and front open
+        return TurnType::LEFT_FRONT;  // Left and front open
     } else if (is_right_open && is_front_open && !is_left_open) {
-      return TurnType::RIGHT_FRONT;  // Right and front open
+        return TurnType::RIGHT_FRONT;  // Right and front open
     } else if (is_left_open && !is_right_open && !is_front_open) {
-      return TurnType::LEFT;  // Only left open
+        return TurnType::LEFT;  // Only left open
     } else if (is_right_open && !is_left_open && !is_front_open) {
-      return TurnType::RIGHT;  // Only right open
-    } else {
-      // Default case if none of the conditions are met (e.g., all closed)
-      // You might want to add a DEAD_END enum case for this scenario
-      return TurnType::RIGHT;  // Default to some value
+        return TurnType::RIGHT;  // Only right open
     }
+
+    // If we somehow get here (shouldn't happen with complete logic above)
+    return TurnType::BLIND_TURN;  // Default to blind turn as safest option
   }
 
   // Callback function processes each incoming LaserScan message.

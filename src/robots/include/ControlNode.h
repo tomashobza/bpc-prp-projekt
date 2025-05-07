@@ -93,7 +93,7 @@ private:
     // Turn PID Controller variables
     float turn_previous_error_{0.0f};
     float turn_integral_{0.0f};
-    const float turn_kp_{2.0f};    // Tune these values
+    const float turn_kp_{0.2f};    // Tune these values
     const float turn_ki_{0.1f};
     const float turn_kd_{0.2f};
     
@@ -133,7 +133,7 @@ private:
     const float corner_detection_threshold_{0.3f};
     const float speed_coefficient_{10.0f};
     const float base_linear_velocity_{0.04f};
-    const float emergency_stop_threshold_{0.15f};
+    const float emergency_stop_threshold_{0.2f};
 
     const float ALIGN_TO_CENTER_DISTANCE = 0.25f;      // For initial alignment and crossroads
     const float POST_ALIGN_SHORT_DISTANCE = 0.15f;   // Shorter distance for post-turn alignment
@@ -350,6 +350,12 @@ private:
             case TurnType::RIGHT_FRONT:
             case TurnType::T_TURN:
                 target_turn_angle_ = M_PI/2.0f;
+                is_crossroad_ = false;
+                current_state_ = RobotState::TURN;
+                RCLCPP_INFO(node_->get_logger(), "Going straight through intersection");
+                break;
+            case TurnType::BLIND_TURN:
+                target_turn_angle_ = M_PI;
                 is_crossroad_ = false;
                 current_state_ = RobotState::TURN;
                 RCLCPP_INFO(node_->get_logger(), "Going straight through intersection");
