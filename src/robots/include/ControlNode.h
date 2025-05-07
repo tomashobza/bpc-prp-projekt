@@ -95,7 +95,7 @@ private:
     float turn_integral_{0.0f};
     const float turn_kp_{0.2f};    // Tune these values
     const float turn_ki_{0.1f};
-    const float turn_kd_{0.2f};
+    const float turn_kd_{0.0f};
     
 
     // Position tracking
@@ -458,7 +458,9 @@ private:
                     handle_turn_transition();
                     
                     RCLCPP_INFO(node_->get_logger(), "Alignment complete, transitioning to TURN");
-                } else if (front_dist_ > emergency_stop_threshold_) {
+                } else if (front_dist_ < emergency_stop_threshold_) {
+                    handle_turn_transition();
+                } else {
                     // Use corridor PID for alignment
                     float angular_velocity = calculate_straight_pid_angular_velocity();
                     float linear_velocity = base_linear_velocity_;
