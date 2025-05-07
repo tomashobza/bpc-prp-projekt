@@ -15,7 +15,7 @@
 class CameraNode : public rclcpp::Node {
 public:
     // Constants
-    static constexpr bool PUBLISH_ANNOTATED_IMAGES = true;  // Toggle for publishing marked images
+    static constexpr bool PUBLISH_ANNOTATED_IMAGES = false;  // Toggle for publishing marked images
 
     // Represents one detected marker
     struct Aruco {
@@ -59,13 +59,20 @@ public:
 
         // Store detection results and publish
         last_detections_.clear();
+        
+        // Create annotated frame if publishing is enabled
+        cv::Mat annotated_frame;
+        if (PUBLISH_ANNOTATED_IMAGES) {
+            annotated_frame = last_frame_.clone();
+        }
+
         if (!marker_ids.empty()) {
             // Prepare message for marker IDs
             auto ids_msg = std::make_unique<std_msgs::msg::Int32MultiArray>();
             ids_msg->data.clear();
 
             for (size_t i = 0; i < marker_ids.size(); i++) {
-                std::cout << marker_ids[i] << " ";
+                ids_msg->data.push_back(marker_ids[i]);
                 RCLCPP_INFO(this->get_logger(), "Found marker: %d", marker_ids[i]);
 
                 Aruco aruco;
@@ -77,21 +84,23 @@ public:
             // Publish marker IDs
             marker_ids_pub_->publish(std::move(ids_msg));
 
-            // If enabled, publish annotated image
+            // Draw markers if publishing is enabled
             if (PUBLISH_ANNOTATED_IMAGES) {
-                cv::Mat annotated_frame = last_frame_.clone();
                 cv::aruco::drawDetectedMarkers(annotated_frame, marker_corners, marker_ids);
-                
-                // Convert to compressed image message
-                std::vector<uchar> buffer;
-                cv::imencode(".jpg", annotated_frame, buffer);
-                
-                auto img_msg = std::make_unique<sensor_msgs::msg::CompressedImage>();
-                img_msg->format = "jpeg";
-                img_msg->data = buffer;
-                
-                annotated_image_pub_->publish(std::move(img_msg));
             }
+        }
+
+        // Publish annotated image if enabled, regardless of marker detection
+        if (PUBLISH_ANNOTATED_IMAGES) {
+            // Convert to compressed image message
+            std::vector<uchar> buffer;
+            cv::imencode(".jpg", annotated_frame, buffer);
+            
+            auto img_msg = std::make_unique<sensor_msgs::msg::CompressedImage>();
+            img_msg->format = "jpeg";
+            img_msg->data = buffer;
+            
+            annotated_image_pub_->publish(std::move(img_msg));
         }
     }
 

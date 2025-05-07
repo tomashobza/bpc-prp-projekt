@@ -34,12 +34,12 @@ int main(int argc, char *argv[])
 
     // Add nodes to the executor
     
-    //executor->add_node(_encoder_node);
+    executor->add_node(_encoder_node);
     // executor->add_node(_motor_node);
     // executor->add_node(_line_node);
-    //executor->add_node(_lidar_node);
-    //executor->add_node(_control_node);
-    //executor->add_node(imu_node); 
+    executor->add_node(_lidar_node);
+    executor->add_node(_control_node);
+    executor->add_node(imu_node); 
     executor->add_node(camera_node);
     // Run the executor (handles callbacks for both nodes)
     executor->spin();
