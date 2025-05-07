@@ -345,12 +345,12 @@ private:
             return;
         }
 
-        // Check for emergency stop condition in any state except EMERGENCY_STOP
-        if (current_state_ != RobotState::EMERGENCY_STOP && current_state_ != RobotState::TURN && front_dist_ < emergency_stop_threshold_) {
-            RobotState previous_state = current_state_;
-            current_state_ = RobotState::EMERGENCY_STOP;
-            RCLCPP_WARN(node_->get_logger(), "EMERGENCY STOP: Obstacle too close (%.2f m)", front_dist_);
-        }
+        // // Check for emergency stop condition in any state except EMERGENCY_STOP
+        // if (current_state_ != RobotState::EMERGENCY_STOP && current_state_ != RobotState::TURN && front_dist_ < emergency_stop_threshold_) {
+        //     RobotState previous_state = current_state_;
+        //     current_state_ = RobotState::EMERGENCY_STOP;
+        //     RCLCPP_WARN(node_->get_logger(), "EMERGENCY STOP: Obstacle too close (%.2f m)", front_dist_);
+        // }
 
         switch (current_state_) {
             case RobotState::IDLE: {
@@ -393,7 +393,40 @@ private:
                     current_state_ = RobotState::ALIGN_TURN;
                     
                     RCLCPP_INFO(node_->get_logger(), "Transitioning to ALIGN_TURN state. Initial yaw: %.3f", start_yaw_);
-                } else if (front_dist_ > emergency_stop_threshold_) {
+                } else if (front_dist_ < emergency_stop_threshold_) {
+                    current_state_ = RobotState::TURN;
+                    start_yaw_ = current_yaw_;  // Fresh yaw reference for turn
+                    turn_integral_ = 0.0f;      // Reset turn PID
+                    turn_previous_error_ = 0.0f;
+                    
+                    // Determine turn angle based on turn type
+                    switch (current_turn_type_) {
+                        case TurnType::LEFT:
+                            target_turn_angle_ = M_PI/2.0f;
+                            is_crossroad_ = false;
+                            RCLCPP_INFO(node_->get_logger(), "Starting left turn");
+                            break;
+                        case TurnType::RIGHT:
+                            target_turn_angle_ = -M_PI/2.0f;
+                            is_crossroad_ = false;
+                            RCLCPP_INFO(node_->get_logger(), "Starting right turn");
+                            break;
+                        case TurnType::CROSS:
+                            current_state_ = RobotState::POST_ALIGN_TURN;
+                            align_start_x_ = current_x_;
+                            align_start_y_ = current_y_;
+                            is_crossroad_ = true;
+                            RCLCPP_INFO(node_->get_logger(), "Detected crossing, transition to POST_ALIGN_TURN");
+                            break;
+                        case TurnType::LEFT_FRONT:
+                        case TurnType::RIGHT_FRONT:
+                        case TurnType::T_TURN:
+                            target_turn_angle_ = M_PI/2.0f;
+                            is_crossroad_ = false;
+                            RCLCPP_INFO(node_->get_logger(), "Going straight through intersection");
+                            break;
+                    }
+                } else {
                     float angular_velocity = calculate_pid_angular_velocity();
                     float linear_velocity = base_linear_velocity_;
                     
@@ -511,7 +544,40 @@ private:
                     integral_ = 0.0f;
                     previous_error_ = 0.0f;
                     RCLCPP_INFO(node_->get_logger(), "Alignment complete, transitioning to FOLLOWING_CORRIDOR");
-                } else if (front_dist_ > emergency_stop_threshold_) {
+                } else if (front_dist_ < emergency_stop_threshold_) {
+                    current_state_ = RobotState::TURN;
+                    start_yaw_ = current_yaw_;  // Fresh yaw reference for turn
+                    turn_integral_ = 0.0f;      // Reset turn PID
+                    turn_previous_error_ = 0.0f;
+                    
+                    // Determine turn angle based on turn type
+                    switch (current_turn_type_) {
+                        case TurnType::LEFT:
+                            target_turn_angle_ = M_PI/2.0f;
+                            is_crossroad_ = false;
+                            RCLCPP_INFO(node_->get_logger(), "Starting left turn");
+                            break;
+                        case TurnType::RIGHT:
+                            target_turn_angle_ = -M_PI/2.0f;
+                            is_crossroad_ = false;
+                            RCLCPP_INFO(node_->get_logger(), "Starting right turn");
+                            break;
+                        case TurnType::CROSS:
+                            current_state_ = RobotState::POST_ALIGN_TURN;
+                            align_start_x_ = current_x_;
+                            align_start_y_ = current_y_;
+                            is_crossroad_ = true;
+                            RCLCPP_INFO(node_->get_logger(), "Detected crossing, transition to POST_ALIGN_TURN");
+                            break;
+                        case TurnType::LEFT_FRONT:
+                        case TurnType::RIGHT_FRONT:
+                        case TurnType::T_TURN:
+                            target_turn_angle_ = M_PI/2.0f;
+                            is_crossroad_ = false;
+                            RCLCPP_INFO(node_->get_logger(), "Going straight through intersection");
+                            break;
+                    }
+                } else {
                     // Use corridor PID for alignment
                     float angular_velocity = calculate_straight_pid_angular_velocity();
                     float linear_velocity = base_linear_velocity_;
