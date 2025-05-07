@@ -4,15 +4,19 @@
 #include <memory>
 #include <string>
 #include <vector>
-
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/compressed_image.hpp"
 #include "sensor_msgs/msg/image.hpp"
 #include <opencv2/opencv.hpp>
 #include <opencv2/aruco.hpp>
+#include "std_msgs/msg/int32_multi_array.hpp"  // For marker IDs
+#include "geometry_msgs/msg/point32.hpp"       // For marker corners
 
 class CameraNode : public rclcpp::Node {
 public:
+    // Constants
+    static constexpr bool PUBLISH_ANNOTATED_IMAGES = true;  // Toggle for publishing marked images
+
     // Represents one detected marker
     struct Aruco {
         int id;
@@ -25,8 +29,18 @@ public:
 
         // Subscribe to compressed image topic
         compressed_sub_ = create_subscription<sensor_msgs::msg::CompressedImage>(
-            "/bpc_prp_robot/camera/compressed", 10,
+            "/bpc_prp_robot/camera/compressed", 1,
             std::bind(&CameraNode::compressed_image_callback, this, std::placeholders::_1));
+
+        // Publishers for ArUco markers
+        marker_ids_pub_ = create_publisher<std_msgs::msg::Int32MultiArray>(
+            "/bpc_prp_robot/detected_markers/ids", 1);
+        
+        // Publisher for annotated images (if enabled)
+        if (PUBLISH_ANNOTATED_IMAGES) {
+            annotated_image_pub_ = create_publisher<sensor_msgs::msg::CompressedImage>(
+                "/bpc_prp_robot/camera/annotated/compressed", 1);
+        }
 
         RCLCPP_INFO(get_logger(), "Camera node initialized");
     }
@@ -41,30 +55,43 @@ public:
         // Detect ArUco markers
         std::vector<int> marker_ids;
         std::vector<std::vector<cv::Point2f>> marker_corners;
-        
         cv::aruco::detectMarkers(last_frame_, dictionary_, marker_corners, marker_ids);
-        
-        // Store detection results
+
+        // Store detection results and publish
         last_detections_.clear();
         if (!marker_ids.empty()) {
-            std::cout << "ArUcos found: ";
+            // Prepare message for marker IDs
+            auto ids_msg = std::make_unique<std_msgs::msg::Int32MultiArray>();
+            ids_msg->data.clear();
+
             for (size_t i = 0; i < marker_ids.size(); i++) {
                 std::cout << marker_ids[i] << " ";
-                
+                RCLCPP_INFO(this->get_logger(), "Found marker: %d", marker_ids[i]);
+
                 Aruco aruco;
                 aruco.id = marker_ids[i];
                 aruco.corners = marker_corners[i];
                 last_detections_.push_back(aruco);
             }
-            std::cout << std::endl;
-            
-            // Draw markers on a copy of the image for visualization (if needed)
-            cv::Mat annotated_frame = last_frame_.clone();
-            cv::aruco::drawDetectedMarkers(annotated_frame, marker_corners, marker_ids);
-            
-            // Display the annotated image (optional)
-            cv::imshow("ArUco Detections", annotated_frame);
-            cv::waitKey(1);  // Allow OpenCV to process window events
+
+            // Publish marker IDs
+            marker_ids_pub_->publish(std::move(ids_msg));
+
+            // If enabled, publish annotated image
+            if (PUBLISH_ANNOTATED_IMAGES) {
+                cv::Mat annotated_frame = last_frame_.clone();
+                cv::aruco::drawDetectedMarkers(annotated_frame, marker_corners, marker_ids);
+                
+                // Convert to compressed image message
+                std::vector<uchar> buffer;
+                cv::imencode(".jpg", annotated_frame, buffer);
+                
+                auto img_msg = std::make_unique<sensor_msgs::msg::CompressedImage>();
+                img_msg->format = "jpeg";
+                img_msg->data = buffer;
+                
+                annotated_image_pub_->publish(std::move(img_msg));
+            }
         }
     }
 
@@ -74,7 +101,7 @@ private:
             // Decode compressed image
             std::vector<uchar> data(msg->data.begin(), msg->data.end());
             last_frame_ = cv::imdecode(data, cv::IMREAD_COLOR);
-            
+
             // Check if the image is valid
             if (last_frame_.empty()) {
                 RCLCPP_ERROR(get_logger(), "Failed to decode compressed image");
@@ -83,7 +110,6 @@ private:
 
             // Process the frame immediately
             process_frame();
-
         } catch (const cv::Exception& e) {
             RCLCPP_ERROR(get_logger(), "CV exception: %s", e.what());
         }
@@ -95,10 +121,14 @@ private:
     // Subscription to compressed image
     rclcpp::Subscription<sensor_msgs::msg::CompressedImage>::SharedPtr compressed_sub_;
 
+    // Publishers
+    rclcpp::Publisher<std_msgs::msg::Int32MultiArray>::SharedPtr marker_ids_pub_;
+    rclcpp::Publisher<sensor_msgs::msg::CompressedImage>::SharedPtr annotated_image_pub_;
+
     // Store the latest frame and detections
     cv::Mat last_frame_;
     std::vector<Aruco> last_detections_;
-    
+
 public:
     // Getters to access the stored data
     cv::Mat get_last_frame() const { return last_frame_; }
