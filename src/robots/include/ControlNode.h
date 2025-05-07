@@ -8,6 +8,8 @@
 #include <geometry_msgs/msg/pose2_d.hpp>
 #include "algorithms/kinematics.hpp"
 #include "algorithms/turns.hpp"
+#include "std_msgs/msg/int32_multi_array.hpp"  // For marker IDs
+#include "geometry_msgs/msg/point32.hpp"       // For marker corners
 
 enum class RobotState {
     IDLE,
@@ -46,6 +48,10 @@ public:
             "/robot_pose", 1,
             std::bind(&ControlNode::on_pose_msg, this, std::placeholders::_1));
 
+        aruco_subscriber_ = node_->create_subscription<std_msgs::msg::Int32MultiArray>(
+            "/bpc_prp_robot/detected_markers/ids", 1,
+            std::bind(&ControlNode::on_aruco_msg, this, std::placeholders::_1));
+
         motors_publisher_ = node_->create_publisher<std_msgs::msg::UInt8MultiArray>(
             "/bpc_prp_robot/set_motor_speeds", 1);
         
@@ -69,6 +75,9 @@ public:
 
 private:
     rclcpp::Node::SharedPtr node_;
+    // ArUco marker tracking
+    rclcpp::Subscription<std_msgs::msg::Int32MultiArray>::SharedPtr aruco_subscriber_;
+    std::unordered_set<int> detected_markers_;  // Just store unique marker IDs
     rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr lidar_subscriber_;
     rclcpp::Subscription<std_msgs::msg::Int8>::SharedPtr turn_subscriber_;
     rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr buttons_subscriber_;
@@ -183,6 +192,14 @@ private:
         current_theta_ = msg->theta;
     }
 
+    void on_aruco_msg(const std_msgs::msg::Int32MultiArray::SharedPtr msg) {
+        for (const auto& marker_id : msg->data) {
+            if (detected_markers_.insert(marker_id).second) {  // If insertion was successful (new marker)
+                RCLCPP_INFO(node_->get_logger(), "New ArUco marker detected: %d", marker_id);
+            }
+        }
+    }
+
     bool has_moved_required_distance() {
         double dx = current_x_ - align_start_x_;
         double dy = current_y_ - align_start_y_;
@@ -232,7 +249,7 @@ private:
             // }
 
             // If at least one of the walls is substituted, the robot is currently in a corner
-            if (std::fabs(single_right_ - right_dist_) > corner_detection_threshold_ || std::fabs(single_left_ - left_dist_) > corner_detection_threshold_) {
+            if (std::fabs(single_right_ - right_dist_) > corner_detection_threshold_ || std::fabs(single_left_ - left_dist_) > corner_detection_threshold_ && !end_of_corridor_detected_) {
                 RCLCPP_INFO(node_->get_logger(), "END OF CORRIDOR DETECTED!");
                 end_of_corridor_detected_ = true;
             }
@@ -330,6 +347,17 @@ private:
         start_yaw_ = current_yaw_;  // Fresh yaw reference for turn
         turn_integral_ = 0.0f;      // Reset turn PID
         turn_previous_error_ = 0.0f;
+
+        // TODO: figure out where to turn based on the found markers
+
+        // Log and clear detected markers before the turn
+        if (!detected_markers_.empty()) {
+            RCLCPP_INFO(node_->get_logger(), "Markers detected before turn:");
+            for (const auto& id : detected_markers_) {
+                RCLCPP_INFO(node_->get_logger(), "Marker ID: %d", id);
+            }
+            detected_markers_.clear(); // clear the set of markers for the next stint
+        }
         
         // Determine turn angle based on turn type
         switch (current_turn_type_) {

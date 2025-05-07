@@ -73,7 +73,6 @@ public:
 
             for (size_t i = 0; i < marker_ids.size(); i++) {
                 ids_msg->data.push_back(marker_ids[i]);
-                RCLCPP_INFO(this->get_logger(), "Found marker: %d", marker_ids[i]);
 
                 Aruco aruco;
                 aruco.id = marker_ids[i];

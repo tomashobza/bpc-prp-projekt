@@ -152,13 +152,13 @@ private:
     }
 
     // if right wall is gone, mock right from left
-    if (left_avg > 0.4) {
-        left_avg = 0.4 - right_avg;
+    if (left_avg > 0.3) {
+        left_avg = 0.43 - right_avg;
     }
 
     // if left wall is gone, mock left from left
-    if (right_avg > 0.4) {
-        right_avg = 0.4 - left_avg;
+    if (right_avg > 0.3) {
+        right_avg = 0.43 - left_avg;
     }
     
     // Create a message to publish the averaged measurements: order: front, right, left.
