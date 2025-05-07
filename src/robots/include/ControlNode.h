@@ -354,8 +354,8 @@ private:
                 break;
             case TurnType::LEFT_FRONT:
             case TurnType::RIGHT_FRONT:
-                target_turn_angle_ = M_PI/2.0f;
-                is_crossroad_ = false;
+                target_turn_angle_ = 0.0f;
+                is_crossroad_ = true;
                 current_state_ = RobotState::TURN;
                 RCLCPP_INFO(node_->get_logger(), "Going straight through left-front or right-front");
                 break;
