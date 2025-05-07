@@ -122,6 +122,9 @@ private:
     float hard_left = msg->angle_min / 2.0f;
     float hard_right = msg->angle_max / 2.0f;
 
+    float detection_left = msg->angle_min * (3.0f / 4.0f);
+    float detection_right = msg->angle_max * (3.0f / 4.0f);
+
     // Compute the average distances for each direction using the angular window.
     float front_avg = average_range_at_angle(front_angle, k_angle_window, msg);
     float left_avg  = average_range_at_angle(left_angle,  k_angle_window, msg);
@@ -130,15 +133,20 @@ private:
     float hard_left_avg = average_range_at_angle(hard_left, k_angle_window, msg);
     float hard_right_avg = average_range_at_angle(hard_right, k_angle_window, msg);
 
+    float detection_right_avg = average_range_at_angle(detection_right, k_angle_window, msg);
+    float detection_left_avg = average_range_at_angle(detection_left, k_angle_window, msg);
+
     // Determine the turn type based on the measurements
     TurnType turn = get_turn(front_avg, hard_left_avg, hard_right_avg);
     
     // Create a message to publish the averaged measurements: order: front, right, left.
     std_msgs::msg::Float32MultiArray avg_msg;
-    avg_msg.data.resize(3);
-    avg_msg.data[0] = front_avg;
-    avg_msg.data[1] = right_avg;
-    avg_msg.data[2] = left_avg;
+    avg_msg.data.resize(5);
+    avg_msg.data[0] = front_avg; // front
+    avg_msg.data[1] = right_avg; // right
+    avg_msg.data[2] = left_avg; // left
+    avg_msg.data[3] = detection_right_avg; // single right
+    avg_msg.data[4] = detection_left_avg; // single left
 
     // Create a separate message for the turn type
     std_msgs::msg::Int8 turn_msg;

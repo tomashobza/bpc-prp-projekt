@@ -109,6 +109,8 @@ private:
     float front_dist_{-1.0f};
     float right_dist_{-1.0f};
     float left_dist_{-1.0f};
+    float single_right_{-1.0f};
+    float single_left_{-1.0f};
     float last_right_dist_{-1.0f};
     float last_left_dist_{-1.0f};
 
@@ -209,26 +211,28 @@ private:
     }
 
     void on_lidar_msg(const std_msgs::msg::Float32MultiArray::SharedPtr msg) {
-        if (msg->data.size() >= 3) {
+        if (msg->data.size() >= 5) {
             front_dist_ = msg->data[0];
             right_dist_ = msg->data[1];
             left_dist_ = msg->data[2];
+            single_right_ = msg->data[3];
+            single_left_ = msg->data[4];
 
             if (last_left_dist_ != -1) {
-                float dist_diff_left = std::fabs(left_dist_ - last_left_dist_);
-                float dist_diff_right = std::fabs(right_dist_ - last_right_dist_);
+                float dist_diff_right = std::fabs(single_right_ - last_right_dist_);
+                float dist_diff_left = std::fabs(single_left_ - last_left_dist_);
                 
                 if (dist_diff_left > corner_detection_threshold_ || 
                     dist_diff_right > corner_detection_threshold_) {
                     end_of_corridor_detected_ = true;
-                    left_dist_ = last_left_dist_;
-                    right_dist_ = last_right_dist_;
+                    // left_dist_ = last_left_dist_;
+                    // right_dist_ = last_right_dist_;
                     RCLCPP_INFO(node_->get_logger(), "End of corridor detected!");
                 }
             }
 
-            last_left_dist_ = left_dist_;
-            last_right_dist_ = right_dist_;
+            last_right_dist_ = single_right_;
+            last_left_dist_ = single_left_;
         }
     }
 
