@@ -436,7 +436,7 @@ private:
                         case TurnType::LEFT_FRONT:
                         case TurnType::RIGHT_FRONT:
                         case TurnType::T_TURN:
-                            target_turn_angle_ = 0.0f;
+                            target_turn_angle_ = M_PI/2.0f;
                             is_crossroad_ = false;
                             RCLCPP_INFO(node_->get_logger(), "Going straight through intersection");
                             break;

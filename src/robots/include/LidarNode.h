@@ -122,8 +122,8 @@ private:
     float hard_left = msg->angle_min / 2.0f;
     float hard_right = msg->angle_max / 2.0f;
 
-    float detection_left = msg->angle_min * (3.0f / 4.0f);
-    float detection_right = msg->angle_max * (3.0f / 4.0f);
+    // float detection_left = msg->angle_min * (3.0f / 4.0f);
+    // float detection_right = msg->angle_max * (3.0f / 4.0f);
 
     // Compute the average distances for each direction using the angular window.
     float front_avg = average_range_at_angle(front_angle, k_angle_window, msg);
@@ -133,11 +133,29 @@ private:
     float hard_left_avg = average_range_at_angle(hard_left, k_angle_window, msg);
     float hard_right_avg = average_range_at_angle(hard_right, k_angle_window, msg);
 
-    float detection_right_avg = average_range_at_angle(detection_right, k_angle_window, msg);
-    float detection_left_avg = average_range_at_angle(detection_left, k_angle_window, msg);
+    float detection_right_avg = right_avg;
+    float detection_left_avg = left_avg;
+    // float detection_right_avg = average_range_at_angle(detection_right, k_angle_window, msg);
+    // float detection_left_avg = average_range_at_angle(detection_left, k_angle_window, msg);
 
     // Determine the turn type based on the measurements
     TurnType turn = get_turn(front_avg, hard_left_avg, hard_right_avg);
+
+    // if both walls gone, mock walls
+    if (left_avg > 0.45 && right_avg > 0.45) {
+      left_avg = 0.2;
+      right_avg = 0.2;
+    }
+
+    // if right wall is gone, mock right from left
+    if (left_avg > 0.4) {
+        left_avg = 0.4 - right_avg;
+    }
+
+    // if left wall is gone, mock left from left
+    if (right_avg > 0.4) {
+        right_avg = 0.4 - left_avg;
+    }
     
     // Create a message to publish the averaged measurements: order: front, right, left.
     std_msgs::msg::Float32MultiArray avg_msg;
