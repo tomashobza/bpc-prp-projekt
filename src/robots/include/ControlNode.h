@@ -218,17 +218,23 @@ private:
             single_right_ = msg->data[3];
             single_left_ = msg->data[4];
 
-            if (last_left_dist_ != -1) {
-                float dist_diff_right = std::fabs(single_right_ - last_right_dist_);
-                float dist_diff_left = std::fabs(single_left_ - last_left_dist_);
+            // if (last_left_dist_ != -1) {
+            //     float dist_diff_right = std::fabs(single_right_ - last_right_dist_);
+            //     float dist_diff_left = std::fabs(single_left_ - last_left_dist_);
                 
-                if (dist_diff_left > corner_detection_threshold_ || 
-                    dist_diff_right > corner_detection_threshold_) {
-                    end_of_corridor_detected_ = true;
-                    // left_dist_ = last_left_dist_;
-                    // right_dist_ = last_right_dist_;
-                    RCLCPP_INFO(node_->get_logger(), "End of corridor detected!");
-                }
+            //     if (dist_diff_left > corner_detection_threshold_ || 
+            //         dist_diff_right > corner_detection_threshold_) {
+            //         end_of_corridor_detected_ = true;
+            //         // left_dist_ = last_left_dist_;
+            //         // right_dist_ = last_right_dist_;
+            //         RCLCPP_INFO(node_->get_logger(), "End of corridor detected!");
+            //     }
+            // }
+
+            // If at least one of the walls is substituted, the robot is currently in a corner
+            if (std::fabs(single_right_ - right_dist_) > corner_detection_threshold_ || std::fabs(single_left_ - left_dist_) > corner_detection_threshold_) {
+                RCLCPP_INFO(node_->get_logger(), "END OF CORRIDOR DETECTED!");
+                end_of_corridor_detected_ = true;
             }
 
             last_right_dist_ = single_right_;
@@ -348,17 +354,22 @@ private:
                 break;
             case TurnType::LEFT_FRONT:
             case TurnType::RIGHT_FRONT:
+                target_turn_angle_ = M_PI/2.0f;
+                is_crossroad_ = false;
+                current_state_ = RobotState::TURN;
+                RCLCPP_INFO(node_->get_logger(), "Going straight through left-front or right-front");
+                break;
             case TurnType::T_TURN:
                 target_turn_angle_ = M_PI/2.0f;
                 is_crossroad_ = false;
                 current_state_ = RobotState::TURN;
-                RCLCPP_INFO(node_->get_logger(), "Going straight through intersection");
+                RCLCPP_INFO(node_->get_logger(), "Going left on a T_TURN");
                 break;
             case TurnType::BLIND_TURN:
                 target_turn_angle_ = M_PI;
                 is_crossroad_ = false;
                 current_state_ = RobotState::TURN;
-                RCLCPP_INFO(node_->get_logger(), "Going straight through intersection");
+                RCLCPP_INFO(node_->get_logger(), "Turning around in a blind turn");
                 break;
         }
     }
