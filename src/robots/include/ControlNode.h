@@ -78,6 +78,8 @@ private:
     // ArUco marker tracking
     rclcpp::Subscription<std_msgs::msg::Int32MultiArray>::SharedPtr aruco_subscriber_;
     std::unordered_set<int> detected_markers_;  // Just store unique marker IDs
+    std::optional<int> first_marker_;  
+
     rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr lidar_subscriber_;
     rclcpp::Subscription<std_msgs::msg::Int8>::SharedPtr turn_subscriber_;
     rclcpp::Subscription<std_msgs::msg::UInt8>::SharedPtr buttons_subscriber_;
@@ -142,7 +144,7 @@ private:
     const float corner_detection_threshold_{0.3f};
     const float speed_coefficient_{10.0f};
     const float base_linear_velocity_{0.04f};
-    const float emergency_stop_threshold_{0.16f};
+    const float emergency_stop_threshold_{0.2f};
 
     const float ALIGN_TO_CENTER_DISTANCE = 0.25f;      // For initial alignment and crossroads
     const float POST_ALIGN_SHORT_DISTANCE = 0.15f;   // Shorter distance for post-turn alignment
@@ -196,8 +198,15 @@ private:
 
     void on_aruco_msg(const std_msgs::msg::Int32MultiArray::SharedPtr msg) {
         for (const auto& marker_id : msg->data) {
-            if (detected_markers_.insert(marker_id).second) {  // If insertion was successful (new marker)
+            // If this is a new marker (insertion was successful)
+            if (detected_markers_.insert(marker_id).second) {
                 RCLCPP_INFO(node_->get_logger(), "New ArUco marker detected: %d", marker_id);
+                
+                // If this is the first marker for this turn decision, store it
+                if (!first_marker_.has_value()) {
+                    first_marker_ = marker_id;
+                    RCLCPP_INFO(node_->get_logger(), "First marker for this turn: %d", marker_id);
+                }
             }
         }
     }
@@ -338,19 +347,24 @@ private:
         return output;
     }
 
-    // Function to get available marker
     std::optional<int> getMarker() const {
-        // If no markers detected, return nullopt
-        if (detected_markers_.empty()) {
-            RCLCPP_DEBUG(node_->get_logger(), "No ArUco markers");
-            return std::nullopt;
+        // First, check if we have a designated first marker
+        if (first_marker_.has_value()) {
+            RCLCPP_DEBUG(node_->get_logger(), "Using first detected marker: %d", first_marker_.value());
+            return first_marker_;
         }
         
-        // return the first element in the set
-        int marker = *detected_markers_.begin();
-        RCLCPP_DEBUG(node_->get_logger(), "Returning ArUco marker: %d", marker);
-        return marker;
+        // Otherwise, if we have any markers at all, return the first one from the set
+        if (!detected_markers_.empty()) {
+            int marker = *detected_markers_.begin();
+            RCLCPP_DEBUG(node_->get_logger(), "No first marker set, using first in set: %d", marker);
+            return marker;
+        }
+        
+        RCLCPP_DEBUG(node_->get_logger(), "No ArUco markers detected");
+        return std::nullopt;
     }
+
 
     uint8_t convert_speed_to_command(float wheel_speed) {
         int command = 127 + static_cast<int>(std::round(speed_coefficient_ * wheel_speed));
@@ -364,8 +378,9 @@ private:
         turn_previous_error_ = 0.0f;
     
         // Get marker if available
-        
+        marker = getMarker();
         // Log and clear detected markers before the turn
+        /*
         if (!detected_markers_.empty()) {
             marker = getMarker();
             RCLCPP_INFO(node_->get_logger(), "Markers detected before turn:");
@@ -373,10 +388,12 @@ private:
                 RCLCPP_INFO(node_->get_logger(), "Marker ID: %d", id);
             }
             detected_markers_.clear(); // clear the set of markers for the next stint
+            first_marker_.clear();
         }
-        
+        */
+
         // Determine turn angle based on marker value if available
-        if (marker.has_value() && current_state_ != RobotState::POST_ALIGN_TURN) {
+        if (marker.has_value()) {
             switch(marker.value()) {
                 case 0:
                 case 10:
@@ -391,6 +408,8 @@ private:
                         is_crossroad_ = true;
                         current_state_ = RobotState::TURN;
                         RCLCPP_INFO(node_->get_logger(), "ARUCO: Going STRAIGHT based on marker %d", marker.value());
+                        detected_markers_.clear();
+                        first_marker_.reset();
                         marker.reset(); // Clear marker value after use
                     }
                     break;
@@ -398,6 +417,7 @@ private:
                 case 1:
                 case 11:
                     if(current_turn_type_ == TurnType::RIGHT ||
+                        current_turn_type_ == TurnType::LEFT ||
                     current_turn_type_ == TurnType::RIGHT_FRONT ||
                     current_turn_type_ == TurnType::BLIND_TURN){
                         fallback_turn_logic();
@@ -407,14 +427,18 @@ private:
                         is_crossroad_ = false;
                         current_state_ = RobotState::TURN;
                         RCLCPP_INFO(node_->get_logger(), "ARUCO: Starting LEFT turn based on marker %d", marker.value());
+                        detected_markers_.clear();
+                        first_marker_.reset();
                         marker.reset(); // Clear marker value after use
                     }
                     break;
                 case 2:
                 case 12:
                     if(current_turn_type_ == TurnType::LEFT ||
+                        current_turn_type_ == TurnType::RIGHT ||
                         current_turn_type_ == TurnType::LEFT_FRONT ||
-                        current_turn_type_ == TurnType::BLIND_TURN){
+                        current_turn_type_ == TurnType::BLIND_TURN)
+                        {
                             fallback_turn_logic();
                             RCLCPP_INFO(node_->get_logger(), "ARUCO: Marker doesn't match turn, defaulting to fallback");
                     } else {
@@ -422,6 +446,8 @@ private:
                         is_crossroad_ = false;
                         current_state_ = RobotState::TURN;
                         RCLCPP_INFO(node_->get_logger(), "ARUCO: Starting RIGHT turn based on marker %d", marker.value());
+                        detected_markers_.clear();
+                        first_marker_.reset();
                         marker.reset();
                     }
                     break;
@@ -583,8 +609,8 @@ private:
                     handle_turn_transition();
                 } else {
                     // Use corridor wall-following PID instead of straight line PID
-                    float angular_velocity = calculate_pid_angular_velocity();
-                    //float angular_velocity = 0.0f;
+                    //float angular_velocity = calculate_pid_angular_velocity();
+                    float angular_velocity = 0.0f;
                     float linear_velocity = base_linear_velocity_;
                     
                     algorithms::RobotSpeed robot_speed(linear_velocity, angular_velocity);
