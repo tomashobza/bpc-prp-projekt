@@ -142,11 +142,13 @@ private:
     const float corner_detection_threshold_{0.3f};
     const float speed_coefficient_{10.0f};
     const float base_linear_velocity_{0.04f};
-    const float emergency_stop_threshold_{0.2f};
+    const float emergency_stop_threshold_{0.16f};
 
     const float ALIGN_TO_CENTER_DISTANCE = 0.25f;      // For initial alignment and crossroads
     const float POST_ALIGN_SHORT_DISTANCE = 0.15f;   // Shorter distance for post-turn alignment
     bool is_crossroad_{false};                       // Track if we're handling a crossroad
+
+    std::optional<int> marker; 
 
     void update_led_color(RobotState state) {
         std_msgs::msg::UInt8MultiArray led_msg;
@@ -336,22 +338,36 @@ private:
         return output;
     }
 
+    // Function to get available marker
+    std::optional<int> getMarker() const {
+        // If no markers detected, return nullopt
+        if (detected_markers_.empty()) {
+            RCLCPP_DEBUG(node_->get_logger(), "No ArUco markers");
+            return std::nullopt;
+        }
+        
+        // return the first element in the set
+        int marker = *detected_markers_.begin();
+        RCLCPP_DEBUG(node_->get_logger(), "Returning ArUco marker: %d", marker);
+        return marker;
+    }
+
     uint8_t convert_speed_to_command(float wheel_speed) {
         int command = 127 + static_cast<int>(std::round(speed_coefficient_ * wheel_speed));
         command = std::min(255, std::max(0, command));
         return static_cast<uint8_t>(command);
     }
 
-    // Add this as a private method in the ControlNode class
     void handle_turn_transition() {
         start_yaw_ = current_yaw_;  // Fresh yaw reference for turn
         turn_integral_ = 0.0f;      // Reset turn PID
         turn_previous_error_ = 0.0f;
-
-        // TODO: figure out where to turn based on the found markers
-
+    
+        // Get marker if available
+        
         // Log and clear detected markers before the turn
         if (!detected_markers_.empty()) {
+            marker = getMarker();
             RCLCPP_INFO(node_->get_logger(), "Markers detected before turn:");
             for (const auto& id : detected_markers_) {
                 RCLCPP_INFO(node_->get_logger(), "Marker ID: %d", id);
@@ -359,7 +375,74 @@ private:
             detected_markers_.clear(); // clear the set of markers for the next stint
         }
         
-        // Determine turn angle based on turn type
+        // Determine turn angle based on marker value if available
+        if (marker.has_value() && current_state_ != RobotState::POST_ALIGN_TURN) {
+            switch(marker.value()) {
+                case 0:
+                case 10:
+                    if(current_turn_type_ == TurnType::LEFT ||
+                    current_turn_type_ == TurnType::RIGHT ||
+                    current_turn_type_ == TurnType::T_TURN ||
+                    current_turn_type_ == TurnType::BLIND_TURN){
+                        fallback_turn_logic();
+                        RCLCPP_INFO(node_->get_logger(), "ARUCO: Marker doesn't match turn, defaulting to fallback");
+                    } else {
+                        target_turn_angle_ = 0.0f;  // Straight
+                        is_crossroad_ = true;
+                        current_state_ = RobotState::TURN;
+                        RCLCPP_INFO(node_->get_logger(), "ARUCO: Going STRAIGHT based on marker %d", marker.value());
+                        marker.reset(); // Clear marker value after use
+                    }
+                    break;
+
+                case 1:
+                case 11:
+                    if(current_turn_type_ == TurnType::RIGHT ||
+                    current_turn_type_ == TurnType::RIGHT_FRONT ||
+                    current_turn_type_ == TurnType::BLIND_TURN){
+                        fallback_turn_logic();
+                        RCLCPP_INFO(node_->get_logger(), "ARUCO: Marker doesn't match turn, defaulting to fallback");
+                    } else {
+                        target_turn_angle_ = M_PI/2.0f;  // Left turn (90 degrees)
+                        is_crossroad_ = false;
+                        current_state_ = RobotState::TURN;
+                        RCLCPP_INFO(node_->get_logger(), "ARUCO: Starting LEFT turn based on marker %d", marker.value());
+                        marker.reset(); // Clear marker value after use
+                    }
+                    break;
+                case 2:
+                case 12:
+                    if(current_turn_type_ == TurnType::LEFT ||
+                        current_turn_type_ == TurnType::LEFT_FRONT ||
+                        current_turn_type_ == TurnType::BLIND_TURN){
+                            fallback_turn_logic();
+                            RCLCPP_INFO(node_->get_logger(), "ARUCO: Marker doesn't match turn, defaulting to fallback");
+                    } else {
+                        target_turn_angle_ = -M_PI/2.0f;  // Right turn (-90 degrees)
+                        is_crossroad_ = false;
+                        current_state_ = RobotState::TURN;
+                        RCLCPP_INFO(node_->get_logger(), "ARUCO: Starting RIGHT turn based on marker %d", marker.value());
+                        marker.reset();
+                    }
+                    break;
+
+                default:
+                    // If no recognized marker, fall back to current_turn_type_
+                    RCLCPP_INFO(node_->get_logger(), "ARUCO: Unrecognized marker %d, falling back to default turn logic", marker.value());
+                    fallback_turn_logic();
+                    break;
+            }
+        } else {
+            // No marker detected, use default turn logic
+            RCLCPP_INFO(node_->get_logger(), "No ArUco marker detected, using default turn logic");
+            fallback_turn_logic();
+        }
+        
+       
+    }
+    
+    // Add this helper method to handle the default turn logic
+    void fallback_turn_logic() {
         switch (current_turn_type_) {
             case TurnType::LEFT:
                 target_turn_angle_ = M_PI/2.0f;
@@ -501,6 +584,7 @@ private:
                 } else {
                     // Use corridor wall-following PID instead of straight line PID
                     float angular_velocity = calculate_pid_angular_velocity();
+                    //float angular_velocity = 0.0f;
                     float linear_velocity = base_linear_velocity_;
                     
                     algorithms::RobotSpeed robot_speed(linear_velocity, angular_velocity);
@@ -561,7 +645,8 @@ private:
                     handle_turn_transition();
                 } else {
                     // Use corridor wall-following PID instead of straight line PID
-                    float angular_velocity = calculate_pid_angular_velocity();
+                    //float angular_velocity = calculate_pid_angular_velocity();
+                    float angular_velocity = 0.0f;
                     float linear_velocity = base_linear_velocity_;
                     
                     algorithms::RobotSpeed robot_speed(linear_velocity, angular_velocity);
