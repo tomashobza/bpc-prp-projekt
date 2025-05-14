@@ -9,7 +9,7 @@ namespace algorithms
     class PlanarImuIntegrator
     {
     public:
-        PlanarImuIntegrator() : theta_(0.0f), gyro_offset_(0.01538f) {}
+        PlanarImuIntegrator() : theta_(0.0f), gyro_offset_(0.0f) {}
 
         // Integrate gyro_z over time to estimate orientation
         void update(float gyro_z, double dt)
@@ -50,10 +50,6 @@ namespace algorithms
         {
             theta_ = 0.0f;
             gyro_offset_ = 0.0f;
-        }
-
-        float get_offset() {
-            return gyro_offset_;
         }
 
     private:

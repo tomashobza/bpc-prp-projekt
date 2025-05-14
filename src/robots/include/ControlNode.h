@@ -30,7 +30,7 @@ public:
           current_state_(RobotState::IDLE),
           end_of_corridor_detected_(false),
           last_button_pressed_(-1),
-          ALIGN_TO_CENTER_DISTANCE(0.23f) // 30 centimeters in meters
+          ALIGN_TO_CENTER_DISTANCE(0.25f) // 30 centimeters in meters
     {
         RCLCPP_INFO(node_->get_logger(), "Control node started!");
 
@@ -106,21 +106,9 @@ private:
     // Turn PID Controller variables
     float turn_previous_error_{0.0f};
     float turn_integral_{0.0f};
-
-    // Standard turn constants (90 degrees and straight)
-    const float turn_kp_standard_{1.0f};    
-    const float turn_ki_standard_{0.3f};   
-    const float turn_kd_standard_{0.0f};   
-
-    // Slower constants for 180-degree turns
-    const float turn_kp_180_{0.5f};    // Half the standard value
-    const float turn_ki_180_{0.15f};   // Half the standard value
-    const float turn_kd_180_{0.0f};    // Keep at 0
-
-    // Current PID constants that will be set based on turn type
-    float turn_kp_{turn_kp_standard_};
-    float turn_ki_{turn_ki_standard_};
-    float turn_kd_{turn_kd_standard_};
+    const float turn_kp_{0.2f}; // Tune these values
+    const float turn_ki_{0.1f};
+    const float turn_kd_{0.0f};
 
     // Position tracking
     double current_x_{0.0};
@@ -366,13 +354,13 @@ private:
         while (angle_error < -M_PI)
             angle_error += 2 * M_PI;
 
-        // PID calculations using current constants
+        // PID calculations
         turn_integral_ += angle_error * 0.02f; // dt = 20ms
         float derivative = (angle_error - turn_previous_error_) / 0.02f;
 
         float output = turn_kp_ * angle_error +
-                    turn_ki_ * turn_integral_ +
-                    turn_kd_ * derivative;
+                       turn_ki_ * turn_integral_ +
+                       turn_kd_ * derivative;
 
         turn_previous_error_ = angle_error;
         return output;
@@ -411,19 +399,6 @@ private:
         start_yaw_ = current_yaw_; // Fresh yaw reference for turn
         turn_integral_ = 0.0f;     // Reset turn PID
         turn_previous_error_ = 0.0f;
-
-        // Set PID constants based on turn type - do this before handling turns
-        if (current_turn_type_ == TurnType::BLIND_TURN) {
-            turn_kp_ = turn_kp_180_;
-            turn_ki_ = turn_ki_180_;
-            turn_kd_ = turn_kd_180_;
-            RCLCPP_INFO(node_->get_logger(), "Using slower PID constants for 180-degree turn");
-        } else {
-            turn_kp_ = turn_kp_standard_;
-            turn_ki_ = turn_ki_standard_;
-            turn_kd_ = turn_kd_standard_;
-            RCLCPP_INFO(node_->get_logger(), "Using standard PID constants for turn");
-        }
 
         // Handle simple turns without using markers
         if (current_turn_type_ == TurnType::LEFT) {
@@ -582,10 +557,10 @@ private:
             RCLCPP_INFO(node_->get_logger(), "Going straight through left-front or right-front");
             break;
         case TurnType::T_TURN:
-            target_turn_angle_ = -M_PI / 2.0f;
+            target_turn_angle_ = M_PI / 2.0f;
             is_crossroad_ = false;
             current_state_ = RobotState::TURN;
-            RCLCPP_INFO(node_->get_logger(), "Going right on a T_TURN");
+            RCLCPP_INFO(node_->get_logger(), "Going left on a T_TURN");
             break;
         case TurnType::BLIND_TURN:
             target_turn_angle_ = M_PI;
@@ -663,7 +638,7 @@ private:
             else
             {
                 float angular_velocity = calculate_pid_angular_velocity();
-                float linear_velocity = base_linear_velocity_*2.0f;
+                float linear_velocity = base_linear_velocity_;
 
                 algorithms::RobotSpeed robot_speed(linear_velocity, angular_velocity);
                 algorithms::WheelSpeed wheel_speeds = kinematics_.inverse(robot_speed);
@@ -690,25 +665,8 @@ private:
                 // Use corridor wall-following PID instead of straight line PID
                 float angular_velocity = calculate_pid_angular_velocity();
                 // float angular_velocity = 0.0f;
+                float linear_velocity = base_linear_velocity_;
 
-                
-                
-                double dx = current_x_ - align_start_x_;
-                double dy = current_y_ - align_start_y_;
-
-                double distance = std::sqrt(dx * dx + dy * dy);
-                
-                double coefficient = 1 - (  distance / ALIGN_TO_CENTER_DISTANCE);
-                
-                double speed_diff = (base_linear_velocity_ * 2.0f) - base_linear_velocity_;
-                
-                
-                float linear_velocity = base_linear_velocity_ + speed_diff * coefficient;
-                
-                
-                //float linear_velocity = base_linear_velocity_*1.4f;
-                
-                
                 algorithms::RobotSpeed robot_speed(linear_velocity, angular_velocity);
                 algorithms::WheelSpeed wheel_speeds = kinematics_.inverse(robot_speed);
 
@@ -779,7 +737,7 @@ private:
                 // Use corridor wall-following PID instead of straight line PID
                 // float angular_velocity = calculate_pid_angular_velocity();
                 float angular_velocity = 0.0f;
-                float linear_velocity = base_linear_velocity_*2.0f;
+                float linear_velocity = base_linear_velocity_;
 
                 algorithms::RobotSpeed robot_speed(linear_velocity, angular_velocity);
                 algorithms::WheelSpeed wheel_speeds = kinematics_.inverse(robot_speed);

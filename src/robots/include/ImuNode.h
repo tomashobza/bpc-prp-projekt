@@ -38,14 +38,14 @@ public:
 private:
     void on_imu_msg(const sensor_msgs::msg::Imu::SharedPtr msg)
     {
-        // if (mode == ImuNodeMode::CALIBRATE)
-        // {
-        //     handle_calibration(msg);
-        // }
-        // else
-        // {
+        if (mode == ImuNodeMode::CALIBRATE)
+        {
+            handle_calibration(msg);
+        }
+        else
+        {
             handle_integration(msg);
-        // }
+        }
     }
 
     void handle_calibration(const sensor_msgs::msg::Imu::SharedPtr msg)
@@ -61,8 +61,8 @@ private:
             mode = ImuNodeMode::INTEGRATE;
 
             RCLCPP_INFO(this->get_logger(),
-                        "Calibration complete. Collected %zu samples. Calibrated to %g",
-                        gyro_calibration_samples_.size(), planar_integrator_.get_offset());
+                        "Calibration complete. Collected %zu samples.",
+                        gyro_calibration_samples_.size());
         }
     }
 
