@@ -7,31 +7,31 @@
 #include <std_msgs/msg/float32_multi_array.hpp>
 #include <std_msgs/msg/u_int8_multi_array.hpp>
 #include <std_msgs/msg/u_int8.hpp>
-#include "algorithms/kinematics.hpp"  // Include the kinematics logic
+#include "algorithms/kinematics.hpp" // Include the kinematics logic
 #include "algorithms/pid.h"
 
 class MotorNode
 {
 public:
   MotorNode(const rclcpp::Node::SharedPtr &node)
-    : node_(node),
-      // Initialize kinematics with wheel radius (m), wheel base (m), and ticks per rotation
-      kinematics_(0.033, 0.16, 360),
-      pid_(node_->declare_parameter("kp", 0.5),
-               node_->declare_parameter("ki", 0.05),
-               node_->declare_parameter("kd", 0.2)),
-      movement_enabled_(false)
+      : node_(node),
+        // Initialize kinematics with wheel radius (m), wheel base (m), and ticks per rotation
+        kinematics_(0.033, 0.16, 360),
+        pid_(node_->declare_parameter("kp", 0.5),
+             node_->declare_parameter("ki", 0.05),
+             node_->declare_parameter("kd", 0.2)),
+        movement_enabled_(false)
   {
     // Initialize PID windup
     pid_.setMaxErrorSum(node_->declare_parameter("max_i", 0.2));
 
     // Set up parameter callback
     params_callback_handle_ = node_->add_on_set_parameters_callback(
-      std::bind(&MotorNode::parametersCallback, this, std::placeholders::_1));
+        std::bind(&MotorNode::parametersCallback, this, std::placeholders::_1));
 
     // Topics
-    const std::string motors_topic  = "/bpc_prp_robot/set_motor_speeds";
-    const std::string lidar_topic   = "/bpc_prp_robot/lidar_avg";
+    const std::string motors_topic = "/bpc_prp_robot/set_motor_speeds";
+    const std::string lidar_topic = "/bpc_prp_robot/lidar_avg";
     const std::string buttons_topic = "/bpc_prp_robot/buttons";
 
     // Set up publisher for motor commands
@@ -39,16 +39,16 @@ public:
 
     // Subscribe to lidar averaged data
     lidar_subscriber_ = node_->create_subscription<std_msgs::msg::Float32MultiArray>(
-      lidar_topic, 1, std::bind(&MotorNode::lidar_callback, this, std::placeholders::_1));
+        lidar_topic, 1, std::bind(&MotorNode::lidar_callback, this, std::placeholders::_1));
 
     // Subscribe to button inputs
     buttons_subscriber_ = node_->create_subscription<std_msgs::msg::UInt8>(
-      buttons_topic, 1, std::bind(&MotorNode::buttons_callback, this, std::placeholders::_1));
+        buttons_topic, 1, std::bind(&MotorNode::buttons_callback, this, std::placeholders::_1));
 
     // Create a timer to publish motor commands at 50 Hz (20 ms)
     timer_ = node_->create_wall_timer(
-      std::chrono::milliseconds(20),
-      std::bind(&MotorNode::timer_callback, this));
+        std::chrono::milliseconds(20),
+        std::bind(&MotorNode::timer_callback, this));
 
     RCLCPP_INFO(node_->get_logger(), "Simplified motor control node started with improved speed mapping!");
   }
@@ -56,7 +56,7 @@ public:
 private:
   // Update the PID parameters on change of ROS2 parameters
   rcl_interfaces::msg::SetParametersResult parametersCallback(
-    const std::vector<rclcpp::Parameter> &parameters)
+      const std::vector<rclcpp::Parameter> &parameters)
   {
     rcl_interfaces::msg::SetParametersResult result;
     result.successful = true;
@@ -65,21 +65,21 @@ private:
     // Update PID parameters if any changed
     for (const auto &param : parameters)
     {
-        if (param.get_name() == "kp" || param.get_name() == "ki" || param.get_name() == "kd" || param.get_name() == "max_i")
-        {
-            float kp = node_->get_parameter("kp").as_double();
-            float ki = node_->get_parameter("ki").as_double();
-            float kd = node_->get_parameter("kd").as_double();
+      if (param.get_name() == "kp" || param.get_name() == "ki" || param.get_name() == "kd" || param.get_name() == "max_i")
+      {
+        float kp = node_->get_parameter("kp").as_double();
+        float ki = node_->get_parameter("ki").as_double();
+        float kd = node_->get_parameter("kd").as_double();
 
-            float max_i = node_->get_parameter("max_i").as_double();
-            
-            pid_.updateParameters(kp, ki, kd);
-            pid_.setMaxErrorSum(max_i);
-            pid_.reset();
-            RCLCPP_INFO(node_->get_logger(), "Updated PID parameters: kp=%.2f, ki=%.2f, kd=%.2f",
-                      kp, ki, kd);
-            break;  // We've updated all parameters, no need to continue checking
-        }
+        float max_i = node_->get_parameter("max_i").as_double();
+
+        pid_.updateParameters(kp, ki, kd);
+        pid_.setMaxErrorSum(max_i);
+        pid_.reset();
+        RCLCPP_INFO(node_->get_logger(), "Updated PID parameters: kp=%.2f, ki=%.2f, kd=%.2f",
+                    kp, ki, kd);
+        break; // We've updated all parameters, no need to continue checking
+      }
     }
 
     return result;
@@ -106,26 +106,29 @@ private:
     {
       float front_dist = msg->data[0];
       float right_dist = msg->data[1];
-      float left_dist  = msg->data[2];
+      float left_dist = msg->data[2];
 
       // Emergency stop if an obstacle is too close in front.
       if (front_dist < 0.2)
       {
         movement_enabled_ = false;
         RCLCPP_WARN(node_->get_logger(), "Emergency stop: obstacle too close (%.2f m)", front_dist);
-        left_command_  = 127;
+        left_command_ = 127;
         right_command_ = 127;
         return;
       }
 
-      if (last_left_dist != -1) {
+      if (last_left_dist != -1)
+      {
         float dist_diff_left = std::fabs(left_dist - last_left_dist);
         float dist_diff_right = std::fabs(right_dist - last_right_dist);
-        if (dist_diff_left > 0.2) {
+        if (dist_diff_left > 0.2)
+        {
           RCLCPP_INFO(node_->get_logger(), "ZATACKA VLEVO");
           movement_enabled_ = false;
         }
-        if (dist_diff_right > 0.2) {
+        if (dist_diff_right > 0.2)
+        {
           RCLCPP_INFO(node_->get_logger(), "ZATACKA VPRAVO");
           movement_enabled_ = false;
         }
@@ -135,7 +138,6 @@ private:
       float corridor_offset = left_dist - right_dist;
 
       // Compute angular velocity with a global steering gain.
-      // TODO: connect PID controller to the angular velocity
       float angular_velocity = pid_.compute(corridor_offset);
       // float angular_velocity = global_steering_gain_ * corridor_offset;
 
@@ -153,10 +155,13 @@ private:
       // RCLCPP_INFO(node_->get_logger(), "raw left: %f, raw right: %f", wheel_speeds.l, wheel_speeds.r);
 
       // Convert the wheel speeds to motor commands using the simplified approach.
-      if (movement_enabled_) {
-          left_command_  = convert_speed_to_command(wheel_speeds.l);
-          right_command_ = convert_speed_to_command(wheel_speeds.r);
-      } else {
+      if (movement_enabled_)
+      {
+        left_command_ = convert_speed_to_command(wheel_speeds.l);
+        right_command_ = convert_speed_to_command(wheel_speeds.r);
+      }
+      else
+      {
         left_command_ = 127;
         right_command_ = 127;
       }
@@ -180,7 +185,8 @@ private:
     if (msg->data == 0)
     {
       movement_enabled_ = !movement_enabled_;
-      if (movement_enabled_) {
+      if (movement_enabled_)
+      {
         pid_.reset();
       }
       RCLCPP_INFO(node_->get_logger(), "Movement %s", movement_enabled_ ? "enabled" : "disabled");
@@ -191,7 +197,7 @@ private:
   void timer_callback()
   {
     std_msgs::msg::UInt8MultiArray msg_commands;
-    msg_commands.data = { left_command_, right_command_ };
+    msg_commands.data = {left_command_, right_command_};
     motors_publisher_->publish(msg_commands);
 
     RCLCPP_DEBUG(node_->get_logger(), "Motors: left=%d, right=%d", left_command_, right_command_);
@@ -217,7 +223,7 @@ private:
   bool movement_enabled_;
 
   // Motor command values (127 represents a stop).
-  uint8_t left_command_  = 127;
+  uint8_t left_command_ = 127;
   uint8_t right_command_ = 127;
 
   // Save last lidar reading
@@ -225,7 +231,7 @@ private:
   float last_left_dist = -1;
 
   // Coefficient to convert wheel speed (m/s) to a motor command increment.
-  const float speed_coefficient_ = 10.0f;  // Adjust this value for the desired sensitivity
+  const float speed_coefficient_ = 10.0f; // Adjust this value for the desired sensitivity
 
   // Base linear velocity (in m/s) when movement is enabled.
   const float base_linear_velocity_ = 0.02f;

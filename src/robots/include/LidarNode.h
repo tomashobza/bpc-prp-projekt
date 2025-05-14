@@ -9,27 +9,26 @@
 #include <algorithm>
 #include "algorithms/turns.hpp"
 
-
 class LidarNode
 {
 public:
   explicit LidarNode(const rclcpp::Node::SharedPtr &node)
-    : node_(node)
+      : node_(node)
   {
     RCLCPP_INFO(node_->get_logger(), "Lidar Node started!");
 
     // Create a subscription to the "/bpc_prp_robot/lidar" topic with a queue size of 10.
     lidar_subscription_ = node_->create_subscription<sensor_msgs::msg::LaserScan>(
-      "/bpc_prp_robot/lidar", 10,
-      std::bind(&LidarNode::lidar_callback, this, std::placeholders::_1));
+        "/bpc_prp_robot/lidar", 10,
+        std::bind(&LidarNode::lidar_callback, this, std::placeholders::_1));
 
     // Create a publisher for the averaged measurements (order: front, right, left).
     lidar_avg_publisher_ = node_->create_publisher<std_msgs::msg::Float32MultiArray>(
-      "/bpc_prp_robot/lidar_avg", 10);
+        "/bpc_prp_robot/lidar_avg", 10);
 
     // Create a publisher for the detected turn type
     lidar_turn_publisher_ = node_->create_publisher<std_msgs::msg::Int8>(
-      "/bpc_prp_robot/detected_turn", 10);
+        "/bpc_prp_robot/detected_turn", 10);
   }
 
   ~LidarNode() {}
@@ -42,7 +41,7 @@ private:
 
   // Static constant for the angular window (in radians) used for averaging.
   static constexpr float k_angle_window = M_PI / 40.0f;
-  
+
   // Distance threshold to determine if a direction is "open"
   static constexpr float k_open_threshold = 0.5f;
 
@@ -85,34 +84,47 @@ private:
     return (count > 0) ? (sum / static_cast<float>(count)) : 0.0f;
   }
 
-  TurnType get_turn(float front, float left, float right) {
+  TurnType get_turn(float front, float left, float right)
+  {
     // Determine which directions are "open" based on a threshold
     bool is_front_open = front > k_open_threshold;
     bool is_left_open = left > k_open_threshold;
     bool is_right_open = right > k_open_threshold;
 
     // Check for blind turn first (all directions closed)
-    if (!is_front_open && !is_left_open && !is_right_open) {
-        return TurnType::BLIND_TURN;  // New enum value for when all directions are closed
+    if (!is_front_open && !is_left_open && !is_right_open)
+    {
+      return TurnType::BLIND_TURN; // New enum value for when all directions are closed
     }
 
     // Decision tree for all possible turn types
-    if (is_left_open && is_right_open && is_front_open) {
-        return TurnType::CROSS;  // All directions open = crossroad
-    } else if (is_left_open && is_right_open && !is_front_open) {
-        return TurnType::T_TURN;  // Left and right open, front closed = T junction
-    } else if (is_left_open && is_front_open && !is_right_open) {
-        return TurnType::LEFT_FRONT;  // Left and front open
-    } else if (is_right_open && is_front_open && !is_left_open) {
-        return TurnType::RIGHT_FRONT;  // Right and front open
-    } else if (is_left_open && !is_right_open && !is_front_open) {
-        return TurnType::LEFT;  // Only left open
-    } else if (is_right_open && !is_left_open && !is_front_open) {
-        return TurnType::RIGHT;  // Only right open
+    if (is_left_open && is_right_open && is_front_open)
+    {
+      return TurnType::CROSS; // All directions open = crossroad
+    }
+    else if (is_left_open && is_right_open && !is_front_open)
+    {
+      return TurnType::T_TURN; // Left and right open, front closed = T junction
+    }
+    else if (is_left_open && is_front_open && !is_right_open)
+    {
+      return TurnType::LEFT_FRONT; // Left and front open
+    }
+    else if (is_right_open && is_front_open && !is_left_open)
+    {
+      return TurnType::RIGHT_FRONT; // Right and front open
+    }
+    else if (is_left_open && !is_right_open && !is_front_open)
+    {
+      return TurnType::LEFT; // Only left open
+    }
+    else if (is_right_open && !is_left_open && !is_front_open)
+    {
+      return TurnType::RIGHT; // Only right open
     }
 
     // If we somehow get here (shouldn't happen with complete logic above)
-    return TurnType::BLIND_TURN;  // Default to blind turn as safest option
+    return TurnType::BLIND_TURN; // Default to blind turn as safest option
   }
 
   // Callback function processes each incoming LaserScan message.
@@ -131,7 +143,7 @@ private:
 
     // Compute the average distances for each direction using the angular window.
     float front_avg = average_range_at_angle(front_angle, k_angle_window, msg);
-    float left_avg  = average_range_at_angle(left_angle,  k_angle_window, msg);
+    float left_avg = average_range_at_angle(left_angle, k_angle_window, msg);
     float right_avg = average_range_at_angle(right_angle, k_angle_window, msg);
 
     float hard_left_avg = average_range_at_angle(hard_left, k_angle_window, msg);
@@ -146,29 +158,32 @@ private:
     TurnType turn = get_turn(front_avg, hard_left_avg, hard_right_avg);
 
     // if both walls gone, mock walls
-    if (left_avg > 0.45 && right_avg > 0.45) {
+    if (left_avg > 0.45 && right_avg > 0.45)
+    {
       left_avg = 0.2;
       right_avg = 0.2;
     }
 
     // if right wall is gone, mock right from left
-    if (left_avg > 0.3) {
-        left_avg = 0.43 - right_avg;
+    if (left_avg > 0.3)
+    {
+      left_avg = 0.43 - right_avg;
     }
 
     // if left wall is gone, mock left from left
-    if (right_avg > 0.3) {
-        right_avg = 0.43 - left_avg;
+    if (right_avg > 0.3)
+    {
+      right_avg = 0.43 - left_avg;
     }
-    
+
     // Create a message to publish the averaged measurements: order: front, right, left.
     std_msgs::msg::Float32MultiArray avg_msg;
     avg_msg.data.resize(5);
-    avg_msg.data[0] = front_avg; // front
-    avg_msg.data[1] = right_avg; // right
-    avg_msg.data[2] = left_avg; // left
+    avg_msg.data[0] = front_avg;           // front
+    avg_msg.data[1] = right_avg;           // right
+    avg_msg.data[2] = left_avg;            // left
     avg_msg.data[3] = detection_right_avg; // single right
-    avg_msg.data[4] = detection_left_avg; // single left
+    avg_msg.data[4] = detection_left_avg;  // single left
 
     // Create a separate message for the turn type
     std_msgs::msg::Int8 turn_msg;
@@ -177,8 +192,8 @@ private:
     // Publish both messages
     lidar_avg_publisher_->publish(avg_msg);
     lidar_turn_publisher_->publish(turn_msg);
-    
+
     // Optionally log the detected turn
-    //RCLCPP_INFO(node_->get_logger(), "Detected turn: %d (F: %g, L: %g, R: %g)", static_cast<int>(turn), front_avg, hard_left_avg, hard_right_avg);
+    // RCLCPP_INFO(node_->get_logger(), "Detected turn: %d (F: %g, L: %g, R: %g)", static_cast<int>(turn), front_avg, hard_left_avg, hard_right_avg);
   }
 };
