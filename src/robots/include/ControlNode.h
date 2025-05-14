@@ -147,7 +147,7 @@ private:
     const float base_linear_velocity_{0.04f};
     const float emergency_stop_threshold_{0.2f};
 
-    const float ALIGN_TO_CENTER_DISTANCE = 0.25f;  // For initial alignment and crossroads
+    const float ALIGN_TO_CENTER_DISTANCE = 0.20f;  // For initial alignment and crossroads
     const float POST_ALIGN_SHORT_DISTANCE = 0.15f; // Shorter distance for post-turn alignment
     bool is_crossroad_{false};                     // Track if we're handling a crossroad
 
@@ -205,18 +205,9 @@ private:
     {
         for (const auto &marker_id : msg->data)
         {
-            // If this is a new marker (insertion was successful)
-            if (detected_markers_.insert(marker_id).second)
-            {
-                RCLCPP_INFO(node_->get_logger(), "New ArUco marker detected: %d", marker_id);
-
-                // If this is the first marker for this turn decision, store it
-                if (!first_marker_.has_value())
-                {
-                    first_marker_ = marker_id;
-                    RCLCPP_INFO(node_->get_logger(), "First marker for this turn: %d", marker_id);
-                }
-            }
+            // Add the marker to the set
+            detected_markers_.insert(marker_id);
+            RCLCPP_INFO(node_->get_logger(), "ArUco marker detected and stored: %d", marker_id);
         }
     }
 
@@ -409,104 +400,129 @@ private:
         turn_integral_ = 0.0f;     // Reset turn PID
         turn_previous_error_ = 0.0f;
 
-        // Get marker if available
-        marker = getMarker();
-        // Log and clear detected markers before the turn
-        /*
-        if (!detected_markers_.empty()) {
-            marker = getMarker();
-            RCLCPP_INFO(node_->get_logger(), "Markers detected before turn:");
-            for (const auto& id : detected_markers_) {
-                RCLCPP_INFO(node_->get_logger(), "Marker ID: %d", id);
-            }
-            detected_markers_.clear(); // clear the set of markers for the next stint
-            first_marker_.clear();
+        // Handle simple turns without using markers
+        if (current_turn_type_ == TurnType::LEFT) {
+            target_turn_angle_ = M_PI / 2.0f;
+            is_crossroad_ = false;
+            current_state_ = RobotState::TURN;
+            RCLCPP_INFO(node_->get_logger(), "Starting simple left turn, preserving markers");
+            return; // Exit early without clearing markers
         }
-        */
+        else if (current_turn_type_ == TurnType::RIGHT) {
+            target_turn_angle_ = -M_PI / 2.0f;
+            is_crossroad_ = false;
+            current_state_ = RobotState::TURN;
+            RCLCPP_INFO(node_->get_logger(), "Starting simple right turn, preserving markers");
+            return; // Exit early without clearing markers
+        }
+        else if (current_turn_type_ == TurnType::BLIND_TURN) {
+            target_turn_angle_ = M_PI;
+            is_crossroad_ = false;
+            current_state_ = RobotState::TURN;
+            RCLCPP_INFO(node_->get_logger(), "Starting blind turn, preserving markers");
+            return; // Exit early without clearing markers
+        }
 
-        // Determine turn angle based on marker value if available
-        if (marker.has_value())
-        {
-            switch (marker.value())
-            {
-            case 0:
-            case 10:
-                if (current_turn_type_ == TurnType::LEFT ||
-                    current_turn_type_ == TurnType::RIGHT ||
-                    current_turn_type_ == TurnType::T_TURN ||
-                    current_turn_type_ == TurnType::BLIND_TURN)
-                {
-                    fallback_turn_logic();
-                    RCLCPP_INFO(node_->get_logger(), "ARUCO: Marker doesn't match turn, defaulting to fallback");
-                }
-                else
-                {
-                    target_turn_angle_ = 0.0f; // Straight
-                    is_crossroad_ = true;
-                    current_state_ = RobotState::TURN;
-                    RCLCPP_INFO(node_->get_logger(), "ARUCO: Going STRAIGHT based on marker %d", marker.value());
-                    detected_markers_.clear();
-                    first_marker_.reset();
-                    marker.reset(); // Clear marker value after use
-                }
-                break;
+        // For complex intersections, use markers for decision making
+        bool used_markers = false; // Track if we used markers for decision
 
-            case 1:
-            case 11:
-                if (current_turn_type_ == TurnType::RIGHT ||
-                    current_turn_type_ == TurnType::LEFT ||
-                    current_turn_type_ == TurnType::RIGHT_FRONT ||
-                    current_turn_type_ == TurnType::BLIND_TURN)
-                {
-                    fallback_turn_logic();
-                    RCLCPP_INFO(node_->get_logger(), "ARUCO: Marker doesn't match turn, defaulting to fallback");
-                }
-                else
-                {
-                    target_turn_angle_ = M_PI / 2.0f; // Left turn (90 degrees)
-                    is_crossroad_ = false;
-                    current_state_ = RobotState::TURN;
-                    RCLCPP_INFO(node_->get_logger(), "ARUCO: Starting LEFT turn based on marker %d", marker.value());
-                    detected_markers_.clear();
-                    first_marker_.reset();
-                    marker.reset(); // Clear marker value after use
-                }
-                break;
-            case 2:
-            case 12:
-                if (current_turn_type_ == TurnType::LEFT ||
-                    current_turn_type_ == TurnType::RIGHT ||
-                    current_turn_type_ == TurnType::LEFT_FRONT ||
-                    current_turn_type_ == TurnType::BLIND_TURN)
-                {
-                    fallback_turn_logic();
-                    RCLCPP_INFO(node_->get_logger(), "ARUCO: Marker doesn't match turn, defaulting to fallback");
-                }
-                else
-                {
-                    target_turn_angle_ = -M_PI / 2.0f; // Right turn (-90 degrees)
-                    is_crossroad_ = false;
-                    current_state_ = RobotState::TURN;
-                    RCLCPP_INFO(node_->get_logger(), "ARUCO: Starting RIGHT turn based on marker %d", marker.value());
-                    detected_markers_.clear();
-                    first_marker_.reset();
-                    marker.reset();
-                }
-                break;
-
-            default:
-                // If no recognized marker, fall back to current_turn_type_
-                RCLCPP_INFO(node_->get_logger(), "ARUCO: Unrecognized marker %d, falling back to default turn logic", marker.value());
+        // First check for priority markers (10, 11, 12)
+        if (detected_markers_.count(10) > 0) {
+            target_turn_angle_ = 0.0f; // Straight
+            is_crossroad_ = true;
+            current_state_ = RobotState::TURN;
+            RCLCPP_INFO(node_->get_logger(), "ARUCO: Going STRAIGHT based on priority marker 10");
+            used_markers = true;
+        }
+        else if (detected_markers_.count(11) > 0) {
+            if (is_turn_compatible(TurnType::LEFT)) {
+                target_turn_angle_ = M_PI / 2.0f; // Left turn
+                is_crossroad_ = false;
+                current_state_ = RobotState::TURN;
+                RCLCPP_INFO(node_->get_logger(), "ARUCO: Starting LEFT turn based on priority marker 11");
+                used_markers = true;
+            } else {
                 fallback_turn_logic();
-                break;
+                RCLCPP_INFO(node_->get_logger(), "ARUCO: Marker 11 doesn't match turn type, using fallback");
             }
         }
-        else
-        {
-            // No marker detected, use default turn logic
-            RCLCPP_INFO(node_->get_logger(), "No ArUco marker detected, using default turn logic");
+        else if (detected_markers_.count(12) > 0) {
+            if (is_turn_compatible(TurnType::RIGHT)) {
+                target_turn_angle_ = -M_PI / 2.0f; // Right turn
+                is_crossroad_ = false;
+                current_state_ = RobotState::TURN;
+                RCLCPP_INFO(node_->get_logger(), "ARUCO: Starting RIGHT turn based on priority marker 12");
+                used_markers = true;
+            } else {
+                fallback_turn_logic();
+                RCLCPP_INFO(node_->get_logger(), "ARUCO: Marker 12 doesn't match turn type, using fallback");
+            }
+        }
+        // Then check for standard markers (0, 1, 2)
+        else if (detected_markers_.count(0) > 0) {
+            target_turn_angle_ = 0.0f; // Straight
+            is_crossroad_ = true;
+            current_state_ = RobotState::TURN;
+            RCLCPP_INFO(node_->get_logger(), "ARUCO: Going STRAIGHT based on marker 0");
+            used_markers = true;
+        }
+        else if (detected_markers_.count(1) > 0) {
+            if (is_turn_compatible(TurnType::LEFT)) {
+                target_turn_angle_ = M_PI / 2.0f; // Left turn
+                is_crossroad_ = false;
+                current_state_ = RobotState::TURN;
+                RCLCPP_INFO(node_->get_logger(), "ARUCO: Starting LEFT turn based on marker 1");
+                used_markers = true;
+            } else {
+                fallback_turn_logic();
+                RCLCPP_INFO(node_->get_logger(), "ARUCO: Marker 1 doesn't match turn type, using fallback");
+            }
+        }
+        else if (detected_markers_.count(2) > 0) {
+            if (is_turn_compatible(TurnType::RIGHT)) {
+                target_turn_angle_ = -M_PI / 2.0f; // Right turn
+                is_crossroad_ = false;
+                current_state_ = RobotState::TURN;
+                RCLCPP_INFO(node_->get_logger(), "ARUCO: Starting RIGHT turn based on marker 2");
+                used_markers = true;
+            } else {
+                fallback_turn_logic();
+                RCLCPP_INFO(node_->get_logger(), "ARUCO: Marker 2 doesn't match turn type, using fallback");
+            }
+        }
+        else {
+            // No recognized markers, use default turn logic
+            RCLCPP_INFO(node_->get_logger(), "No recognized ArUco markers in set, using default turn logic");
             fallback_turn_logic();
         }
+
+        // Only clear markers if we actually used them for decision making
+        if (used_markers) {
+            RCLCPP_INFO(node_->get_logger(), "Clearing marker set after using for decision");
+            detected_markers_.clear();
+        } else {
+            RCLCPP_INFO(node_->get_logger(), "Preserving markers as they weren't used for decision");
+        }
+    }
+
+    bool is_turn_compatible(TurnType intended_turn) {
+        return true;
+        // switch (current_turn_type_) {
+        //     case TurnType::LEFT:
+        //     case TurnType::T_TURN:
+        //         return intended_turn == TurnType::LEFT;
+        //     case TurnType::RIGHT:
+        //         return intended_turn == TurnType::RIGHT;
+        //     case TurnType::CROSS:
+        //         return true; // All turns are possible at a cross
+        //     case TurnType::LEFT_FRONT:
+        //     case TurnType::RIGHT_FRONT:
+        //         return true; // Can go straight or turn
+        //     case TurnType::BLIND_TURN:
+        //         return false; // Special case, always use fallback
+        //     default:
+        //         return false;
+        // }
     }
 
     // Add this helper method to handle the default turn logic
@@ -584,13 +600,6 @@ private:
             return;
         }
 
-        // // Check for emergency stop condition in any state except EMERGENCY_STOP
-        // if (current_state_ != RobotState::EMERGENCY_STOP && current_state_ != RobotState::TURN && front_dist_ < emergency_stop_threshold_) {
-        //     RobotState previous_state = current_state_;
-        //     current_state_ = RobotState::EMERGENCY_STOP;
-        //     RCLCPP_WARN(node_->get_logger(), "EMERGENCY STOP: Obstacle too close (%.2f m)", front_dist_);
-        // }
-
         switch (current_state_)
         {
         case RobotState::IDLE:
@@ -601,28 +610,12 @@ private:
                 last_button_pressed_ = -1;
                 RCLCPP_INFO(node_->get_logger(), "Transitioning from IDLE to FOLLOWING_CORRIDOR state");
             }
-            // else if (last_button_pressed_ == 1) {
-            //     current_state_ = RobotState::ALIGN_TURN;
-            //     align_start_x_ = current_x_;
-            //     align_start_y_ = current_y_;
-            //     last_button_pressed_ = -1;
-            //     RCLCPP_INFO(node_->get_logger(), "Transitioning from IDLE to ALIGN_TURN state");
-            // } else if (last_button_pressed_ == 2) {
-            //     current_state_ = RobotState::TURN;
-            //     start_yaw_ = current_yaw_;
-            //     last_button_pressed_ = -1;
-            //     RCLCPP_INFO(node_->get_logger(), "Transitioning from IDLE to TURN state");
-            // }
             break;
         }
         case RobotState::FOLLOWING_CORRIDOR:
         {
             if (end_of_corridor_detected_)
             {
-                // First stop the robot briefly to ensure stable yaw reading
-                // motor_command.data = {127, 127};
-                // motors_publisher_->publish(motor_command);
-
                 // Store current position and yaw
                 align_start_x_ = current_x_;
                 align_start_y_ = current_y_;
@@ -670,8 +663,8 @@ private:
             else
             {
                 // Use corridor wall-following PID instead of straight line PID
-                // float angular_velocity = calculate_pid_angular_velocity();
-                float angular_velocity = 0.0f;
+                float angular_velocity = calculate_pid_angular_velocity();
+                // float angular_velocity = 0.0f;
                 float linear_velocity = base_linear_velocity_;
 
                 algorithms::RobotSpeed robot_speed(linear_velocity, angular_velocity);
